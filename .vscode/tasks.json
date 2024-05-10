@@ -1,0 +1,21 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Active env",
+      "type": "shell",
+      "command": "ddocker compose -f ./story-docker/compose.yaml up",
+      "windows": {
+        "command": "docker compose -f ./story-docker/compose.yaml up"
+      },
+      "group": "none",
+      "presentation": {
+        "reveal": "always",
+        "panel": "new"
+      },
+      "runOptions": {
+        "runOn": "folderOpen"
+      }
+    }
+  ]
+}

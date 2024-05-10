@@ -1,0 +1,17 @@
+services:
+  docker-story:
+    build: .
+    ports:
+      - "8080:8080"
+    volumes:
+      - /f/cache/hf/models:/hf_home/models
+      - /f/cache/hf:/hf_home 
+      - /f/cache:/tts_home 
+      - /f/cache/whisper:/whisper
+    deploy:
+      resources:
+        reservations:
+          devices:
+          - driver: nvidia
+            count: 1
+            capabilities: [gpu]
