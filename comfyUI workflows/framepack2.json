@@ -1,0 +1,70 @@
+{
+  "2": {
+    "inputs": {
+      "image": "lumi4x8IVN_20180228112353557.jpg"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "Load Image"
+    }
+  },
+  "3": {
+    "inputs": {
+      "frame_rate": ["23", 1],
+      "loop_count": 0,
+      "filename_prefix": "AnimateDiff",
+      "format": "video/h264-mp4",
+      "pix_fmt": "yuv420p",
+      "crf": 19,
+      "save_metadata": true,
+      "trim_to_audio": false,
+      "pingpong": false,
+      "save_output": true,
+      "images": ["23", 0]
+    },
+    "class_type": "VHS_VideoCombine",
+    "_meta": {
+      "title": "Video Combine 🎥🅥🅗🅢"
+    }
+  },
+  "23": {
+    "inputs": {
+      "prompt": ["24", 0],
+      "total_second_length": 3,
+      "fps": 30,
+      "seed": 734,
+      "steps": 25,
+      "gs": 10,
+      "use_teacache": true,
+      "upscale": 1,
+      "n_prompt": "",
+      "ref_image": ["2", 0]
+    },
+    "class_type": "RunningHub_FramePack_F1",
+    "_meta": {
+      "title": "RunningHub FramePack F1"
+    }
+  },
+  "24": {
+    "inputs": {
+      "prompt": "",
+      "max_resulting_tokens": 256,
+      "prompt_enhancer": ["25", 0],
+      "image_prompt": ["2", 0]
+    },
+    "class_type": "LTXVPromptEnhancer",
+    "_meta": {
+      "title": "🅛🅣🅧 LTXV Prompt Enhancer"
+    }
+  },
+  "25": {
+    "inputs": {
+      "llm_name": "unsloth/Llama-3.2-3B-Instruct",
+      "image_captioner_name": "MiaoshouAI/Florence-2-large-PromptGen-v2.0"
+    },
+    "class_type": "LTXVPromptEnhancerLoader",
+    "_meta": {
+      "title": "🅛🅣🅧 LTXV Prompt Enhancer Loader"
+    }
+  }
+}

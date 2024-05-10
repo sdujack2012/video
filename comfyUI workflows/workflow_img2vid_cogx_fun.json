@@ -1,0 +1,145 @@
+{
+  "11": {
+    "inputs": {
+      "enable_vae_tiling": true,
+      "tile_sample_min_height": 240,
+      "tile_sample_min_width": 360,
+      "tile_overlap_factor_height": 0.2,
+      "tile_overlap_factor_width": 0.2,
+      "auto_tile_size": true,
+      "pipeline": ["41", 0],
+      "samples": ["41", 1]
+    },
+    "class_type": "CogVideoDecode",
+    "_meta": {
+      "title": "CogVideo Decode"
+    }
+  },
+  "20": {
+    "inputs": {
+      "clip_name": "t5\\google_t5-v1_1-xxl_encoderonly-fp8_e4m3fn.safetensors",
+      "type": "sd3"
+    },
+    "class_type": "CLIPLoader",
+    "_meta": {
+      "title": "Load CLIP"
+    }
+  },
+  "30": {
+    "inputs": {
+      "prompt": "a warrior is facing a flying monster in a firey scene",
+      "strength": 1,
+      "force_offload": true,
+      "clip": ["20", 0]
+    },
+    "class_type": "CogVideoTextEncode",
+    "_meta": {
+      "title": "CogVideo TextEncode"
+    }
+  },
+  "31": {
+    "inputs": {
+      "prompt": "The video is not of a high quality, it has a low resolution. Watermark present in each frame. Strange motion trajectory. ",
+      "strength": 1,
+      "force_offload": true,
+      "clip": ["20", 0]
+    },
+    "class_type": "CogVideoTextEncode",
+    "_meta": {
+      "title": "CogVideo TextEncode"
+    }
+  },
+  "36": {
+    "inputs": {
+      "image": "scene2 (2).png",
+      "upload": "image"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "Load Image"
+    }
+  },
+  "37": {
+    "inputs": {
+      "width": 1024,
+      "height": 1024,
+      "upscale_method": "lanczos",
+      "keep_proportion": true,
+      "divisible_by": 16,
+      "crop": "disabled",
+      "image": ["36", 0]
+    },
+    "class_type": "ImageResizeKJ",
+    "_meta": {
+      "title": "Resize Image"
+    }
+  },
+  "41": {
+    "inputs": {
+      "video_length": 49,
+      "base_resolution": 512,
+      "seed": 1030412454573329,
+      "steps": 30,
+      "cfg": 6,
+      "scheduler": "CogVideoXDPMScheduler",
+      "noise_aug_strength": 0.0563,
+      "pipeline": ["48", 0],
+      "positive": ["30", 0],
+      "negative": ["31", 0],
+      "start_img": ["37", 0]
+    },
+    "class_type": "CogVideoXFunSampler",
+    "_meta": {
+      "title": "CogVideoXFun Sampler"
+    }
+  },
+  "44": {
+    "inputs": {
+      "frame_rate": 32,
+      "loop_count": 0,
+      "filename_prefix": "CogVideoX_Fun",
+      "format": "video/h264-mp4",
+      "pingpong": false,
+      "save_output": false,
+      "images": ["50", 0]
+    },
+    "class_type": "VHS_VideoCombine",
+    "_meta": {
+      "title": "Video Combine 🎥🅥🅗🅢"
+    }
+  },
+  "48": {
+    "inputs": {
+      "model": "CogVideoX_5b_fun_GGUF_Q4_0.safetensors",
+      "vae_precision": "bf16",
+      "fp8_fastmode": false,
+      "load_device": "offload_device",
+      "enable_sequential_cpu_offload": false
+    },
+    "class_type": "DownloadAndLoadCogVideoGGUFModel",
+    "_meta": {
+      "title": "(Down)load CogVideo GGUF Model"
+    }
+  },
+  "49": {
+    "inputs": {
+      "images": ["37", 0]
+    },
+    "class_type": "PreviewImage",
+    "_meta": {
+      "title": "Preview Image"
+    }
+  },
+  "50": {
+    "inputs": {
+      "ckpt_name": "film_net_fp32.pt",
+      "clear_cache_after_n_frames": 10,
+      "multiplier": 2,
+      "frames": ["11", 0]
+    },
+    "class_type": "FILM VFI",
+    "_meta": {
+      "title": "FILM VFI"
+    }
+  }
+}

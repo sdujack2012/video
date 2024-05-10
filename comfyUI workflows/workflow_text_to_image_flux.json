@@ -1,0 +1,107 @@
+{
+  "6": {
+    "inputs": {
+      "text": ["69", 0],
+      "clip": ["30", 1]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "CLIP Text Encode (Positive Prompt)"
+    }
+  },
+  "8": {
+    "inputs": {
+      "samples": ["31", 0],
+      "vae": ["30", 2]
+    },
+    "class_type": "VAEDecode",
+    "_meta": {
+      "title": "VAE Decode"
+    }
+  },
+  "30": {
+    "inputs": {
+      "ckpt_name": "flux\\flux1-dev-fp8.safetensors"
+    },
+    "class_type": "CheckpointLoaderSimple",
+    "_meta": {
+      "title": "Load Checkpoint"
+    }
+  },
+  "31": {
+    "inputs": {
+      "seed": ["64", 3],
+      "steps": 20,
+      "cfg": 1,
+      "sampler_name": "euler",
+      "scheduler": "simple",
+      "denoise": 1,
+      "model": ["30", 0],
+      "positive": ["35", 0],
+      "negative": ["33", 0],
+      "latent_image": ["42", 0]
+    },
+    "class_type": "KSampler",
+    "_meta": {
+      "title": "KSampler"
+    }
+  },
+  "33": {
+    "inputs": {
+      "text": "",
+      "clip": ["30", 1]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "CLIP Text Encode (Negative Prompt)"
+    }
+  },
+  "35": {
+    "inputs": {
+      "guidance": 3.5,
+      "conditioning": ["6", 0]
+    },
+    "class_type": "FluxGuidance",
+    "_meta": {
+      "title": "FluxGuidance"
+    }
+  },
+  "42": {
+    "inputs": {
+      "width": 1024,
+      "height": 1024,
+      "batch_size": 1
+    },
+    "class_type": "EmptySD3LatentImage",
+    "_meta": {
+      "title": "EmptySD3LatentImage"
+    }
+  },
+  "64": {
+    "inputs": {
+      "seed": 971070756884159
+    },
+    "class_type": "Seed",
+    "_meta": {
+      "title": "Seed"
+    }
+  },
+  "69": {
+    "inputs": {
+      "value": "In a world where darkness and beauty intertwine, a hauntingly seductive scene unfolds. A double exposure reveals a captivating 25-year-old magic user with short, windswept blonde hair, her ethereal presence contrasted by an ominous crowd of anthropophagus zombies. Blood and shadows mingle in a dark, flowery swamp, where the acid-streaked ground and ruins give way to a surreal floral fantasia, all set within a dystopian, dark sci-fi realm.\n\nHer delicate hands weave a mesmerizing spell, as smoky thick trails of ethereal lightning and smoke spiral between her fingers and dance around her back, casting an ethereal glow. Her figure, a vision of sensual grace, is partially veiled in an off-shoulder dark brown leather bodice adorned with intricate Celtic embossing's that is split to her waist that adds a touch of ancient mystique to her attire.\n\nShe stands amidst reflective holographic mirror panels that fracture the space around her into a scattering of angular contrasts and shadows, creating an otherworldly backdrop.\n\nHer vivid, athletic build—a sporty yet graceful figure—boasts a slim, elastic body with generous curves. Her languid gaze and sexy pose exude an irresistible allure, blending the fantastical with the stylized in a scene that is both breathtaking and surreal."
+    },
+    "class_type": "Text Input [Dream]",
+    "_meta": {
+      "title": "✍ Text Input"
+    }
+  },
+  "74": {
+    "inputs": {
+      "images": ["8", 0]
+    },
+    "class_type": "PreviewImage",
+    "_meta": {
+      "title": "Preview Image"
+    }
+  }
+}

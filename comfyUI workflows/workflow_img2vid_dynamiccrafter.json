@@ -1,0 +1,126 @@
+{
+  "1": {
+    "inputs": {
+      "image": "square_area_for_2_subjects_first_pass.png",
+      "upload": "image"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "Load Image"
+    }
+  },
+  "5": {
+    "inputs": {
+      "width": 1024,
+      "height": 512,
+      "upscale_method": "lanczos",
+      "keep_proportion": true,
+      "divisible_by": 64,
+      "image": ["1", 0]
+    },
+    "class_type": "ImageResizeKJ",
+    "_meta": {
+      "title": "Resize Image"
+    }
+  },
+  "6": {
+    "inputs": {
+      "image": ["5", 0]
+    },
+    "class_type": "GetImageSizeAndCount",
+    "_meta": {
+      "title": "Get Image Size & Count"
+    }
+  },
+  "29": {
+    "inputs": {
+      "frame_rate": 8,
+      "loop_count": 0,
+      "filename_prefix": "AnimateDiff",
+      "format": "video/h264-mp4",
+      "pix_fmt": "yuv420p",
+      "crf": 19,
+      "save_metadata": true,
+      "pingpong": false,
+      "save_output": false,
+      "images": ["58", 0]
+    },
+    "class_type": "VHS_VideoCombine",
+    "_meta": {
+      "title": "Video Combine 🎥🅥🅗🅢"
+    }
+  },
+  "49": {
+    "inputs": {
+      "text": "branches in wind",
+      "clip": ["60", 0]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "CLIP Text Encode (Prompt)"
+    }
+  },
+  "50": {
+    "inputs": {
+      "text": "",
+      "clip": ["60", 0]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "CLIP Text Encode (Prompt)"
+    }
+  },
+  "52": {
+    "inputs": {
+      "model": "dynamicrafter_512_fp16_pruned.safetensors",
+      "dtype": "auto",
+      "fp8_unet": true
+    },
+    "class_type": "DownloadAndLoadDynamiCrafterModel",
+    "_meta": {
+      "title": "(Down)Load DynamiCrafterModel"
+    }
+  },
+  "58": {
+    "inputs": {
+      "steps": 20,
+      "cfg": 7,
+      "eta": 1,
+      "frames": 16,
+      "seed": 619731667089947,
+      "fs": 10,
+      "keep_model_loaded": true,
+      "vae_dtype": "auto",
+      "frame_window_size": 16,
+      "frame_window_stride": 4,
+      "augmentation_level": 0,
+      "model": ["52", 0],
+      "clip_vision": ["59", 0],
+      "positive": ["49", 0],
+      "negative": ["50", 0],
+      "image": ["6", 0]
+    },
+    "class_type": "DynamiCrafterI2V",
+    "_meta": {
+      "title": "DynamiCrafterI2V"
+    }
+  },
+  "59": {
+    "inputs": {
+      "model": "CLIP-ViT-H-fp16.safetensors"
+    },
+    "class_type": "DownloadAndLoadCLIPVisionModel",
+    "_meta": {
+      "title": "(Down)Load CLIPVisionModel"
+    }
+  },
+  "60": {
+    "inputs": {
+      "model": "stable-diffusion-2-1-clip-fp16.safetensors"
+    },
+    "class_type": "DownloadAndLoadCLIPModel",
+    "_meta": {
+      "title": "(Down)Load CLIPModel"
+    }
+  }
+}

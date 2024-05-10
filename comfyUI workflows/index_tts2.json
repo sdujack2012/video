@@ -1,0 +1,56 @@
+{
+  "26": {
+    "inputs": {
+      "model": "IndexTTS-2",
+      "download_from": "modelscope"
+    },
+    "class_type": "easy downloadIndexTTSAndLoadModel",
+    "_meta": {
+      "title": "IndexTTS Model Loader"
+    }
+  },
+  "27": {
+    "inputs": {
+      "text": "",
+      "unload_model": false,
+      "seed": 4242950409,
+      "indextts_model": [
+        "26",
+        0
+      ],
+      "reference_audio": [
+        "29",
+        0
+      ]
+    },
+    "class_type": "easy indexTTSGenerateSimple",
+    "_meta": {
+      "title": "IndexTTS Generate Simple"
+    }
+  },
+  "29": {
+    "inputs": {
+      "audio": "ComfyUI_temp_ztreq_00002_.flac",
+      "audioUI": ""
+    },
+    "class_type": "LoadAudio",
+    "_meta": {
+      "title": "LoadAudio"
+    }
+  },
+  "49": {
+    "inputs": {
+      "filename_prefix": "audio/ComfyUI",
+      "quality": "V0",
+      "audioUI": "",
+      "audio": [
+        "27",
+        0
+      ]
+    },
+    "class_type": "SaveAudioMP3",
+    "_meta": {
+      "title": "Save Audio (MP3)"
+    }
+  }
+}
