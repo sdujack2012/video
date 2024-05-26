@@ -40,6 +40,9 @@ RUN python3.10 -m pip install --no-cache-dir fastapi \
 RUN python3.10 -m pip install --no-cache-dir TTS
 RUN python3.10 -m pip install -U openai-whisper
 RUN python3.10 -m pip install pydantic
+RUN python3.10 -m pip install -U xformers --index-url https://download.pytorch.org/whl/cu118
+RUN python3.10 -m pip install -U peft
+RUN python3.10 -m pip install -U bitsandbytes
 
 # Set up a new user named "user" with user ID 1000
 RUN useradd -m -u 1000 user

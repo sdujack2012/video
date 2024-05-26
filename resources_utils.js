@@ -91,38 +91,6 @@ async function batchGenerateAudios(audioDetails) {
   }
 }
 
-function mergeTranscriptSegments(segments, segmentLength = 10) {
-  let index = 0;
-  const mergedsegments = [];
-  while (index < segments.length) {
-    let startIndex = index;
-    index++;
-    while (
-      index < segments.length - 1 &&
-      segments[index].end - segments[startIndex].start < segmentLength
-    ) {
-      index++;
-    }
-    const selectedSegments = segments.slice(startIndex, index + 1);
-    const selectedText = selectedSegments
-      .map((segment) => segment.text)
-      .join("");
-    const selectedwords = selectedSegments
-      .map((segment) => segment.words)
-      .flatMap((words) => words);
-
-    mergedsegments.push({
-      start: segments[startIndex].start,
-      end: segments[index > segments.length - 1 ? segments.length - 1 : index]
-        .end,
-      text: selectedText,
-      words: selectedwords,
-    });
-    index++;
-  }
-  return mergedsegments;
-}
-
 async function batchGenerateTranscripts(audioFiles, segmentLength) {
   console.log("Batch Generating transcripts");
   const transcripts = [];
@@ -131,20 +99,37 @@ async function batchGenerateTranscripts(audioFiles, segmentLength) {
     transcripts.push(transcript.segments);
   }
 
-  return transcripts.map((transcript) =>
-    mergeTranscriptSegments(transcript, segmentLength)
+  const mergedTranscripts = transcripts.map((segments) => segments.reduce((mergedSegments, currentSegment, currentSegmentIndex) => {
+    const currentMergedSegment = mergedSegments.length > 0 ? mergedSegments[mergedSegments.length - 1] : null;
+    // Merge segment to its previous ones when 
+    // 1. Current segment is the last segment in the transcript, or
+    
+    // 2. the duration of its previous ones and the current segment combined exceeds the segmentLength threshold
+    if (currentMergedSegment && (currentSegmentIndex === segments.length - 1 || currentSegment.end - currentMergedSegment.start < segmentLength)) {
+      mergedSegments[mergedSegments.length - 1] = {
+        start: currentMergedSegment.start,
+        end: currentSegment.end,
+        text: currentMergedSegment.text + currentSegment.text,
+        words: [...currentMergedSegment.words, ...currentSegment.words],
+      };
+    } else if (!currentMergedSegment || currentSegment.end - currentMergedSegment.start >= segmentLength) {
+      mergedSegments.push(currentSegment);
+    }
+    return mergedSegments;
+  }, [])
   );
+
+  return mergedTranscripts;
 }
 
-async function generateContinousStoryScenePrompts(scenceDescriptions, genre) {
+async function generateContinousStoryScenePrompts(scenceDescriptions, genre, characters) {
   console.log("Batch Generating scence prompts");
   const systemMessage = {
     role: "system",
     content: `
     you are an expert on writing Stable Diffusion prompts to generate images for ${genre} stories. 
-    below are the whole story:  ${scenceDescriptions.join(" ")}. 
     We will follow the formula to craft prompts: An image of [adjective] [subjuct] [doing action] [details] 
-    All the image prompts need to suggest ${genre} styles
+    All the image prompts need to suggest ${genre} styles.
     `,
   };
 
@@ -156,8 +141,8 @@ async function generateContinousStoryScenePrompts(scenceDescriptions, genre) {
       role: "user",
       content: `
       Now write a Stable Diffusion prompt for the following scene ${scenceDescription} based on the formula. 
-      Please consider the context of the story provided and then fill the formula
-      Please only output the prompt in plain text and don't include anything else. 
+      Please consider the context of the story provided and then fill the formula. If you need to refer to a character in the story please refer to the json for the appears of the charactors: ${JSON.stringify(characters)}
+      Please only output the prompt concise in plain text and don't include anything else. 
       `,
     };
     if (messages.length > 10) {
@@ -166,9 +151,9 @@ async function generateContinousStoryScenePrompts(scenceDescriptions, genre) {
     messages.push(prompt);
     const completion = await openai.chat.completions.create({
       messages,
-      model: "gpt-3.5-turbo-0125",
+      model: "gpt-4o",
     });
-    scenePrompts.push(completion.choices[0].message.content);
+    scenePrompts.push(completion.choices[0].message.content + ", concise, high definition, vibrant colors");
   }
 
   return scenePrompts;
@@ -297,6 +282,5 @@ exports.batchGenerateImagesByPrompts = batchGenerateImagesByPrompts;
 exports.batchGenerateAudios = batchGenerateAudios;
 exports.batchGenerateTranscripts = batchGenerateTranscripts;
 exports.generateContinousStoryScenePrompts = generateContinousStoryScenePrompts;
-exports.mergeTranscriptSegments = mergeTranscriptSegments;
 exports.generateStoryContentByCharactor = generateStoryContentByCharactor;
 exports.extractCharactersFromStory = extractCharactersFromStory;

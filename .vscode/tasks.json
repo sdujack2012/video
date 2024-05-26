@@ -4,9 +4,9 @@
     {
       "label": "Active env",
       "type": "shell",
-      "command": "docker compose -f ./story-docker/compose.yaml up",
+      "command": "docker compose -f ./story-docker/compose.yaml up --build",
       "windows": {
-        "command": "docker compose -f ./story-docker/compose.yaml up"
+        "command": "docker compose -f ./story-docker/compose.yaml up --build"
       },
       "group": "none",
       "presentation": {

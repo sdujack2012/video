@@ -9,13 +9,19 @@ const {
   generateStoryContentByCharactor,
   extractCharactersFromStory,
 } = require("./resources_utils");
+const { getAudioDurationInSeconds } = require("get-audio-duration");
 
-async function generateScenes(title, width, height) {
+async function generateScenes(title) {
   const storyFolder = createFolderIfNotExist("short_story", title);
   const storyJsonPath = path.resolve(storyFolder, "story.json");
   const storyImageFolder = createFolderIfNotExist(storyFolder, "images");
-
+  const sizeMapping = {
+    standard: { width: 1360, height: 768 },
+    short: { width: 768, height: 1360 },
+  };
   const story = JSON.parse(fs.readFileSync(storyJsonPath, "utf8"));
+
+  const { width, height } = sizeMapping[story.videoType];
   if (story.hasImage) {
     console.log("Skip Generate generate images");
     return;
@@ -189,6 +195,11 @@ async function generateStoryAudios(title) {
   console.log("audioFileInfos", audioFileInfosToCreate);
   await batchGenerateAudios(audioFileInfosToCreate);
   story.hasAudios = true;
+  let totalDuration = 0;
+  for (let audioFileInfo of audioFileInfos) {
+    totalDuration += await getAudioDurationInSeconds(audioFileInfo.outputFile);
+  }
+  story.videoType = totalDuration > 51 ? "standard" : "short";
   fs.writeFileSync(storyJsonPath, JSON.stringify(story));
 }
 
@@ -203,7 +214,7 @@ async function generateTranscript(title) {
 
   const transcripts = await batchGenerateTranscripts(
     story.contentChunks.map((contentChunk) => contentChunk.audioFile),
-    5
+    10
   );
   transcripts.forEach((transcript, index) => {
     story.contentChunks[index].transcript = transcript;
@@ -226,7 +237,8 @@ async function generateScenePrompts(title) {
     const contentChunk = story.contentChunks[index];
     const promps = await generateContinousStoryScenePrompts(
       contentChunk.transcript.map((segment) => segment.text),
-      story.genre
+      story.genre,
+      story.characters,
     );
     promps.forEach((promp, index) => {
       contentChunk.transcript[index].sceneImagePrompts = promp;
@@ -249,24 +261,14 @@ async function generateStoryExtractInfo(title) {
   fs.writeFileSync(storyJsonPath, JSON.stringify(story));
 }
 
-const sizeMapping = {
-  standard: { width: 1344, height: 768 },
-  short: { width: 768, height: 1344 },
-};
+
 
 async function generateShortVideoResources(title) {
-  const storyFolder = createFolderIfNotExist("short_story", title);
-  const storyJsonPath = path.resolve(storyFolder, "story.json");
-  const story = JSON.parse(fs.readFileSync(storyJsonPath, "utf8"));
-  const size = sizeMapping[story.videoType];
-  if (!story.genre || !size) {
-    throw "Please specify genre and videoType";
-  }
   await generateStoryExtractInfo(title);
   await generateStoryAudios(title);
   await generateTranscript(title);
   await generateScenePrompts(title);
-  await generateScenes(title, size.width, size.height);
+  await generateScenes(title);
 }
 
 exports.generateShortVideoResources = generateShortVideoResources;

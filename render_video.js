@@ -13,8 +13,8 @@ async function renderShortVideo(topic) {
   const story = JSON.parse(fs.readFileSync(storyJsonPath, "utf8"));
 
   const sizeMapping = {
-    standard: { width: 1344, height: 768 },
-    short: { width: 768, height: 1344 },
+    standard: { width: 1360, height: 768 },
+    short: { width: 768, height: 1360 },
   };
   const lineLengthMappings = {
     standard: 6,
