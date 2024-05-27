@@ -195,6 +195,7 @@ dependencies:
       - scikit-learn==1.5.0
       - scipy==1.11.4
       - smart-open==6.4.0
+      - socket-engine==1.0.0
       - sounddevice==0.4.6
       - soundfile==0.12.1
       - soxr==0.3.7

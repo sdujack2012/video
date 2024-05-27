@@ -1,7 +1,6 @@
 const fs = require("fs");
 const path = require("path");
 const { getAudioDurationInSeconds } = require("get-audio-duration");
-
 const { createFolderIfNotExist } = require("./utils");
 
 async function renderShortVideo(topic) {

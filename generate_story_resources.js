@@ -22,10 +22,10 @@ async function generateScenes(title) {
   const story = JSON.parse(fs.readFileSync(storyJsonPath, "utf8"));
 
   const { width, height } = sizeMapping[story.videoType];
-  if (story.hasImage) {
-    console.log("Skip Generate generate images");
-    return;
-  }
+  // if (story.hasImage) {
+  //   console.log("Skip Generate generate images");
+  //   return;
+  // }
 
   const imagesInfos = [];
   story.contentChunks.forEach((contentChunk, chunkIndex) => {
@@ -214,7 +214,7 @@ async function generateTranscript(title) {
 
   const transcripts = await batchGenerateTranscripts(
     story.contentChunks.map((contentChunk) => contentChunk.audioFile),
-    10
+    5
   );
   transcripts.forEach((transcript, index) => {
     story.contentChunks[index].transcript = transcript;

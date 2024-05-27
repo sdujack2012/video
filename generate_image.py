@@ -1,6 +1,8 @@
-from diffusers import StableDiffusionXLPipeline
+from compel import Compel, ReturnedEmbeddingsType
+from diffusers import DiffusionPipeline
 import torch
 import sys, json
+
 torch.backends.cuda.matmul.allow_tf32 = True
 
 if sys.argv[1] is None:
@@ -9,15 +11,17 @@ if sys.argv[1] is None:
 with open(sys.argv[1], "r") as file:
     imageInfos = json.load(file)
     model_id = "stabilityai/stable-diffusion-xl-base-1.0"
-    pipeline = StableDiffusionXLPipeline.from_pretrained(
+    pipeline = DiffusionPipeline.from_pretrained(
         model_id, torch_dtype=torch.bfloat16, use_safetensors=True
     ).to("cuda")
     pipeline.enable_model_cpu_offload()
     pipeline.enable_xformers_memory_efficient_attention()
+    compel = Compel(tokenizer=[pipeline.tokenizer, pipeline.tokenizer_2] , text_encoder=[pipeline.text_encoder, pipeline.text_encoder_2], returned_embeddings_type=ReturnedEmbeddingsType.PENULTIMATE_HIDDEN_STATES_NON_NORMALIZED, requires_pooled=[False, True])
     
     with torch.inference_mode():
         for imageInfo in imageInfos:
-            image = pipeline(imageInfo["prompt"], num_inference_steps=20, height=imageInfo["height"], width=imageInfo["width"]).images[0]
+            conditioning, pooled = compel(imageInfo["prompt"])
+            image = pipeline(prompt_embeds=conditioning, pooled_prompt_embeds=pooled, num_inference_steps=30,  height=imageInfo["height"], width=imageInfo["width"]).images[0]
             image.save(imageInfo["outputFile"])
 
 

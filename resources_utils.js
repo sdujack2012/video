@@ -3,10 +3,10 @@ const path = require("path");
 const axios = require("axios");
 const OpenAI = require("openai");
 const apiKey = fs.readFileSync("./apikey", "utf8");
-const { executeExternalHelper, createFolderIfNotExist } = require("./utils");
+const { executeExternalHelper } = require("./utils");
 const openai = new OpenAI({ apiKey });
 
-async function generateImage(prompt, width, height) {   
+async function generateImage(prompt, width, height) {
   const response = await axios.get(
     `http://localhost:8080/text2image`,
     {
@@ -69,7 +69,7 @@ async function generateText(messages) {
     `http://localhost:8080/instruct`,
     {
 
-      "messages":messages,
+      "messages": messages,
       "max_new_tokens": 1024,
       "do_sample": true,
       "temperature": 0.6,
@@ -90,6 +90,11 @@ async function generateText(messages) {
 async function batchGenerateImagesByPrompts(imagePromptDetails) {
   console.log("Batch generating images");
   await executeExternalHelper("python generate_image.py", imagePromptDetails);
+  // for(let imagePromptDetail of imagePromptDetails) {
+  //   const imageBase64 = await generateImage(imagePromptDetail.prompt);
+  //   const buff = Buffer.from(imageBase64, 'base64');
+  //   fs.writeFileSync(imagePromptDetail.outputFile, buff);
+  // }
 }
 
 async function batchGenerateAudios(audioDetails) {
@@ -99,7 +104,7 @@ async function batchGenerateAudios(audioDetails) {
 
 async function batchGenerateTranscripts(audioFiles, segmentLength) {
   console.log("Batch Generating transcripts");
-  const transcripts = await executeExternalHelper("python generate_transcript.py", audioFiles); 
+  const transcripts = await executeExternalHelper("python generate_transcript.py", audioFiles);
 
   const mergedTranscripts = transcripts.map((segments) => segments.reduce((mergedSegments, currentSegment, currentSegmentIndex) => {
     const currentMergedSegment = mergedSegments.length > 0 ? mergedSegments[mergedSegments.length - 1] : null;
@@ -143,7 +148,9 @@ async function generateContinousStoryScenePrompts(scenceDescriptions, genre, cha
       role: "user",
       content: `
       Now write a Stable Diffusion prompt for the following scene ${scenceDescription} based on the formula. 
-      Please consider the context of the story provided and then fill the formula. If you need to refer to a character in the story please refer to the json for the appears of the charactors: ${JSON.stringify(characters)}
+      Please consider the context of the story provided and then fill the formula. 
+      Please be as specific as possible about the surrounding, the backgroup and the style needs to match the genre type ${genre} 
+      Please also include the character's appearance and name specified in this json ${JSON.stringify(characters)} when you refering to the characters
       Please only output the prompt concise in plain text and don't include anything else. 
       `,
     };
@@ -155,7 +162,7 @@ async function generateContinousStoryScenePrompts(scenceDescriptions, genre, cha
       messages,
       model: "gpt-4o",
     });
-    scenePrompts.push(completion.choices[0].message.content + ", concise, high definition, vibrant colors");
+    scenePrompts.push(completion.choices[0].message.content);
   }
 
   return scenePrompts;
@@ -259,7 +266,8 @@ async function extractCharactersFromStory(content) {
     role: "user",
     content: `
     Now, for the following story, I want you to extract all characters from the story into a json in the format of [{name, gender, appearance, voiceType}]
-    For gender, appearance and voiceType, please use your best knowledge. You can make up gender, appearance and voiceType if not specified in the story
+    For gender, appearance and voiceType, please use your best knowledge. You can make up gender, appearance and voiceType if not specified in the story.
+    Please be very specific about the characters' appearance, including their race, eyes and other facial features, skin color, hair color, age, body type, what they wear and their colors, and anything you can think of 
     story: ${content}
     
     Please only output the raw json and don't include any additional messaging and formatting
@@ -268,7 +276,7 @@ async function extractCharactersFromStory(content) {
   messages.push(prompt);
   const completion = await openai.chat.completions.create({
     messages,
-    model: "gpt-3.5-turbo-0125",
+    model: "gpt-4o",
   });
   messages.push(completion.choices[0].message);
   const json = completion.choices[0].message.content
