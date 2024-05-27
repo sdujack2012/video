@@ -143,11 +143,10 @@ def instruct(instructRequest: InstructRequest):
         top_p=0.9,
     )
 
-    instructRequest.messages.append({
+    return {"data": { "message": {
         "role": "assistant",
         "content": outputs[0]["generated_text"][len(prompt):]
-    })
-    return {"data": { "messages": instructRequest.messages } }
+    } } }
   
 
   

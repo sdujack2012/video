@@ -1,7 +1,7 @@
-from diffusers import AutoPipelineForText2Image
+from diffusers import StableDiffusionXLPipeline
 import torch
 import sys, json
-
+torch.backends.cuda.matmul.allow_tf32 = True
 
 if sys.argv[1] is None:
     sys.exit(0)
@@ -9,16 +9,16 @@ if sys.argv[1] is None:
 with open(sys.argv[1], "r") as file:
     imageInfos = json.load(file)
     model_id = "stabilityai/stable-diffusion-xl-base-1.0"
-    pipeline = AutoPipelineForText2Image.from_pretrained(
-        model_id, torch_dtype=torch.float16, use_safetensors=True, cache_dir="./models"
+    pipeline = StableDiffusionXLPipeline.from_pretrained(
+        model_id, torch_dtype=torch.bfloat16, use_safetensors=True
     ).to("cuda")
+    pipeline.enable_model_cpu_offload()
     pipeline.enable_xformers_memory_efficient_attention()
-
+    
     with torch.inference_mode():
-        for prompt,outputFile  in zip(imageInfos["prompts"],imageInfos["outputFiles"]) :
-            print(outputFile, prompt)
-            image = pipeline(prompt, num_inference_steps=50, height=imageInfos["height"], width=imageInfos["width"]).images[0]
-            image.save(outputFile)
+        for imageInfo in imageInfos:
+            image = pipeline(imageInfo["prompt"], num_inference_steps=20, height=imageInfo["height"], width=imageInfo["width"]).images[0]
+            image.save(imageInfo["outputFile"])
 
 
 

@@ -1,10 +1,12 @@
 const fs = require("fs");
+const path = require("path");
 const axios = require("axios");
 const OpenAI = require("openai");
 const apiKey = fs.readFileSync("./apikey", "utf8");
+const { executeExternalHelper, createFolderIfNotExist } = require("./utils");
 const openai = new OpenAI({ apiKey });
 
-async function generateImage(prompt, width, height) {
+async function generateImage(prompt, width, height) {   
   const response = await axios.get(
     `http://localhost:8080/text2image`,
     {
@@ -62,48 +64,48 @@ async function generateTranscript(audioFile) {
   return response.data.data;
 }
 
+async function generateText(messages) {
+  const response = await axios.post(
+    `http://localhost:8080/instruct`,
+    {
+
+      "messages":messages,
+      "max_new_tokens": 1024,
+      "do_sample": true,
+      "temperature": 0.6,
+      "top_p": 0.9,
+      "tokenize": false,
+      "add_generation_prompt": true
+    },
+    {
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+    }
+  );
+  return response.data.data;
+}
+
 async function batchGenerateImagesByPrompts(imagePromptDetails) {
   console.log("Batch generating images");
-  for (let imagePromptDetail of imagePromptDetails) {
-    const imageBase64 = await generateImage(
-      imagePromptDetail.prompt,
-      imagePromptDetail.width,
-      imagePromptDetail.height
-    );
-    fs.writeFileSync(
-      imagePromptDetail.outputFile,
-      Buffer.from(imageBase64, "base64")
-    );
-  }
+  await executeExternalHelper("python generate_image.py", imagePromptDetails);
 }
 
 async function batchGenerateAudios(audioDetails) {
   console.log("Batch generating audios");
-  for (let audioDetail of audioDetails) {
-    const audioBase64 = await generateAudio(
-      audioDetail.text,
-      audioDetail.speakerVoiceFile
-    );
-    fs.writeFileSync(
-      audioDetail.outputFile,
-      Buffer.from(audioBase64, "base64")
-    );
-  }
+  await executeExternalHelper("python generate_audio.py", audioDetails);
 }
 
 async function batchGenerateTranscripts(audioFiles, segmentLength) {
   console.log("Batch Generating transcripts");
-  const transcripts = [];
-  for (let audioFile of audioFiles) {
-    const transcript = await generateTranscript(audioFile);
-    transcripts.push(transcript.segments);
-  }
+  const transcripts = await executeExternalHelper("python generate_transcript.py", audioFiles); 
 
   const mergedTranscripts = transcripts.map((segments) => segments.reduce((mergedSegments, currentSegment, currentSegmentIndex) => {
     const currentMergedSegment = mergedSegments.length > 0 ? mergedSegments[mergedSegments.length - 1] : null;
     // Merge segment to its previous ones when 
     // 1. Current segment is the last segment in the transcript, or
-    
+
     // 2. the duration of its previous ones and the current segment combined exceeds the segmentLength threshold
     if (currentMergedSegment && (currentSegmentIndex === segments.length - 1 || currentSegment.end - currentMergedSegment.start < segmentLength)) {
       mergedSegments[mergedSegments.length - 1] = {

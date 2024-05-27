@@ -157,7 +157,7 @@ async function generateStoryAudios(title) {
   ];
 
   const femaleCharacters = story.characters.filter(
-    (character) => character.gender === "female"
+    (character) => character.gender?.toLocaleLowerCase() === "female"
   );
   if (femaleCharacters.length > femaleVoiceFiles.length) {
     throw "More female voice files needed";
@@ -167,7 +167,7 @@ async function generateStoryAudios(title) {
   });
 
   const maleCharacters = story.characters.filter(
-    (character) => character.gender !== "female"
+    (character) => character.gender?.toLocaleLowerCase() !== "female"
   );
   if (maleCharacters.length > maleVoiceFiles.length) {
     throw "More male voice files needed";
