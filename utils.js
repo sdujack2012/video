@@ -17,8 +17,8 @@ function createFolderIfNotExist(...pathParts) {
 async function executeExternalHelper(command, inputJson) {
   createFolderIfNotExist(path.resolve("temp"));
   const tempInputJson = path.resolve("temp", `temp_${Math.random()}.json`);
-  const tempOutputJson = path.resolve("temp", `temp_${Math.random()}.json`);
   fs.writeFileSync(tempInputJson, JSON.stringify(inputJson));
+  const tempOutputJson = path.resolve("temp", `temp_${Math.random()}.json`);
   const { stderr } = await exec(
     `${command} "${tempInputJson}" "${tempOutputJson}"`
   );
@@ -30,8 +30,8 @@ async function executeExternalHelper(command, inputJson) {
   }
 }
 
-async function executeExternalSession(command, args, hostChannel, action) {
-  const child = spawn(command, args);
+async function createAiSession(hostChannel) {
+  const child = spawn("python", ["ai_session.py"]);
   child.stdout.setEncoding('utf8');
   const clientChannel = `${Math.random()}#client`;
   
@@ -72,11 +72,11 @@ async function executeExternalSession(command, args, hostChannel, action) {
       });
       return await promise;
     },
-    writeDataToHost: (data) => c.write(hostChannel, { data, clientChannel, action })
+    writeDataToHost: (data, action) => c.write(hostChannel, { data, clientChannel, action })
   }
 }
 
 exports.createFolderIfNotExist = createFolderIfNotExist;
 exports.executeExternalHelper = executeExternalHelper;
-exports.executeExternalSession = executeExternalSession;
+exports.createAiSession = createAiSession;
 

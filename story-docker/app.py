@@ -13,6 +13,8 @@ import functools
 import sys, os
 torch.backends.cuda.matmul.allow_tf32 = True
 os.environ["COQUI_TOS_AGREED"] = "1"
+import gc
+
 
 class Text2SpeechRequest(BaseModel):
     text: str
@@ -34,6 +36,8 @@ class InstructRequest(BaseModel):
 # of the app. This way, we can use the docs as a landing page for the app on Spaces.
 app = FastAPI(docs_url="/")
 
+torch.cuda.empty_cache()
+gc.collect()
 
 @functools.cache
 def load_sd_model():

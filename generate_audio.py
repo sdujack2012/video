@@ -3,7 +3,7 @@ import sys, json
 
 if sys.argv[1] is None:
     sys.exit(0)
-with open(sys.argv[1], "r") as file:
+with open(sys.argv[1], "r", encoding="utf8") as file:
     audioInfos = json.load(file)
 
     tts = TTS("tts_models/multilingual/multi-dataset/xtts_v2").to("cuda")

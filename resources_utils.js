@@ -84,7 +84,7 @@ async function generateText(messages) {
       },
     }
   );
-  return response.data.data;
+  return response.data.data.message;
 }
 
 async function batchGenerateImagesByPrompts(imagePromptDetails) {
@@ -129,6 +129,39 @@ async function batchGenerateTranscripts(audioFiles, segmentLength) {
   return mergedTranscripts;
 }
 
+
+async function generateStoryCoverPrompt(content, genre, characters) {
+  console.log("Generating story cover prompt");
+  const systemMessage = {
+    role: "system",
+    content: `
+    you are an expert on writing Stable Diffusion prompts to generate images for ${genre} stories. 
+    We will follow the formula to craft prompts: An image of [adjective] [subjuct] [doing action] [details] 
+    All the image prompts need to suggest ${genre} styles.
+    `,
+  };
+
+  const prompt = {
+    role: "user",
+    content: `
+    Now write a Stable Diffusion prompt to create a cover image for the following story content "${content}" based on the formula. 
+    Please be as specific as possible about the surrounding, the backgroup and the style needs to match the genre type ${genre} 
+    Please also include the character's appearance and name specified in this json ${JSON.stringify(characters)} when you refering to the characters
+    Please only output the prompt concise in plain text and don't include anything else. 
+    `,
+  };
+
+  const messages = [systemMessage, prompt];
+  
+  messages.push(prompt);
+  const completion = await openai.chat.completions.create({
+    messages,
+    model: "gpt-4o",
+  });
+
+  return completion.choices[0].message.content;
+}
+
 async function generateContinousStoryScenePrompts(scenceDescriptions, genre, characters) {
   console.log("Batch Generating scence prompts");
   const systemMessage = {
@@ -158,11 +191,14 @@ async function generateContinousStoryScenePrompts(scenceDescriptions, genre, cha
       messages = [systemMessage];
     }
     messages.push(prompt);
-    const completion = await openai.chat.completions.create({
-      messages,
-      model: "gpt-4o",
-    });
-    scenePrompts.push(completion.choices[0].message.content);
+    const message = await generateText(messages);
+
+    // const completion = await openai.chat.completions.create({
+    //   messages,
+    //   model: "gpt-4o",
+    // });
+    messages.push(message);
+    scenePrompts.push(message.content);
   }
 
   return scenePrompts;
@@ -191,7 +227,7 @@ async function generateStoryContentByCharactor(content, characters) {
     .reduce(
       (mergedChunks, contentChunk) => {
         let currentMergedChunk = mergedChunks[mergedChunks.length - 1];
-        if (currentMergedChunk.length > 5000) {
+        if (currentMergedChunk.length > 10000) {
           mergedChunks.push(contentChunk);
         } else {
           currentMergedChunk = [currentMergedChunk, contentChunk].join("\n");
@@ -214,13 +250,14 @@ async function generateStoryContentByCharactor(content, characters) {
       `,
     };
     const messages = [systemMessage, prompt];
-    const completion = await openai.chat.completions.create({
-      messages,
-      model: "gpt-4o",
-    });
-    messages.push(completion.choices[0].message);
-    console.log(completion.choices[0].message.content);
-    const json = completion.choices[0].message.content
+    const message = await generateText(messages);
+    // const completion = await openai.chat.completions.create({
+    //   messages,
+    //   model: "gpt-4o",
+    // });
+    messages.push(message);
+    console.log(message.content);
+    const json = message.content
       .replace("```json", "")
       .replace("```", "")
       .replace("...", "");
@@ -294,3 +331,5 @@ exports.batchGenerateTranscripts = batchGenerateTranscripts;
 exports.generateContinousStoryScenePrompts = generateContinousStoryScenePrompts;
 exports.generateStoryContentByCharactor = generateStoryContentByCharactor;
 exports.extractCharactersFromStory = extractCharactersFromStory;
+exports.generateStoryCoverPrompt = generateStoryCoverPrompt;
+
