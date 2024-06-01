@@ -4,7 +4,10 @@ const axios = require("axios");
 const OpenAI = require("openai");
 const apiKey = fs.readFileSync("./apikey", "utf8");
 const { executeExternalHelper } = require("./utils");
-const openai = new OpenAI({ apiKey });
+const openai = new OpenAI({
+  apiKey: "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",
+  baseURL: "https://api.groq.com/openai/v1",
+});
 
 async function generateImage(prompt, width, height) {
   const response = await axios.get(
@@ -68,14 +71,13 @@ async function generateText(messages) {
   const response = await axios.post(
     `http://localhost:8080/instruct`,
     {
-
-      "messages": messages,
-      "max_new_tokens": 1024,
-      "do_sample": true,
-      "temperature": 0.6,
-      "top_p": 0.9,
-      "tokenize": false,
-      "add_generation_prompt": true
+      messages: messages,
+      max_new_tokens: 1024,
+      do_sample: true,
+      temperature: 0.6,
+      top_p: 0.9,
+      tokenize: false,
+      add_generation_prompt: true,
     },
     {
       headers: {
@@ -104,31 +106,44 @@ async function batchGenerateAudios(audioDetails) {
 
 async function batchGenerateTranscripts(audioFiles, segmentLength) {
   console.log("Batch Generating transcripts");
-  const transcripts = await executeExternalHelper("python generate_transcript.py", audioFiles);
+  const transcripts = await executeExternalHelper(
+    "python generate_transcript.py",
+    audioFiles
+  );
 
-  const mergedTranscripts = transcripts.map((segments) => segments.reduce((mergedSegments, currentSegment, currentSegmentIndex) => {
-    const currentMergedSegment = mergedSegments.length > 0 ? mergedSegments[mergedSegments.length - 1] : null;
-    // Merge segment to its previous ones when 
-    // 1. Current segment is the last segment in the transcript, or
+  const mergedTranscripts = transcripts.map((segments) =>
+    segments.reduce((mergedSegments, currentSegment, currentSegmentIndex) => {
+      const currentMergedSegment =
+        mergedSegments.length > 0
+          ? mergedSegments[mergedSegments.length - 1]
+          : null;
+      // Merge segment to its previous ones when
+      // 1. Current segment is the last segment in the transcript, or
 
-    // 2. the duration of its previous ones and the current segment combined exceeds the segmentLength threshold
-    if (currentMergedSegment && (currentSegmentIndex === segments.length - 1 || currentSegment.end - currentMergedSegment.start < segmentLength)) {
-      mergedSegments[mergedSegments.length - 1] = {
-        start: currentMergedSegment.start,
-        end: currentSegment.end,
-        text: currentMergedSegment.text + currentSegment.text,
-        words: [...currentMergedSegment.words, ...currentSegment.words],
-      };
-    } else if (!currentMergedSegment || currentSegment.end - currentMergedSegment.start >= segmentLength) {
-      mergedSegments.push(currentSegment);
-    }
-    return mergedSegments;
-  }, [])
+      // 2. the duration of its previous ones and the current segment combined exceeds the segmentLength threshold
+      if (
+        currentMergedSegment &&
+        (currentSegmentIndex === segments.length - 1 ||
+          currentSegment.end - currentMergedSegment.start < segmentLength)
+      ) {
+        mergedSegments[mergedSegments.length - 1] = {
+          start: currentMergedSegment.start,
+          end: currentSegment.end,
+          text: currentMergedSegment.text + currentSegment.text,
+          words: [...currentMergedSegment.words, ...currentSegment.words],
+        };
+      } else if (
+        !currentMergedSegment ||
+        currentSegment.end - currentMergedSegment.start >= segmentLength
+      ) {
+        mergedSegments.push(currentSegment);
+      }
+      return mergedSegments;
+    }, [])
   );
 
   return mergedTranscripts;
 }
-
 
 async function generateStoryCoverPrompt(content, genre, characters) {
   console.log("Generating story cover prompt");
@@ -152,17 +167,21 @@ async function generateStoryCoverPrompt(content, genre, characters) {
   };
 
   const messages = [systemMessage, prompt];
-  
+
   messages.push(prompt);
   const completion = await openai.chat.completions.create({
     messages,
-    model: "gpt-4o",
+    model: "llama3-70b-8192",
   });
 
   return completion.choices[0].message.content;
 }
 
-async function generateContinousStoryScenePrompts(scenceDescriptions, genre, characters) {
+async function generateContinousStoryScenePrompts(
+  scenceDescriptions,
+  genre,
+  characters
+) {
   console.log("Batch Generating scence prompts");
   const systemMessage = {
     role: "system",
@@ -191,13 +210,16 @@ async function generateContinousStoryScenePrompts(scenceDescriptions, genre, cha
       messages = [systemMessage];
     }
     messages.push(prompt);
-    const message = await generateText(messages);
+    // const message = await generateText(messages);
 
-    // const completion = await openai.chat.completions.create({
-    //   messages,
-    //   model: "gpt-4o",
-    // });
+    const message = (
+      await openai.chat.completions.create({
+        messages,
+        model: "llama3-70b-8192",
+      })
+    ).choices[0].message;
     messages.push(message);
+    console.log(message);
     scenePrompts.push(message.content);
   }
 
@@ -250,11 +272,13 @@ async function generateStoryContentByCharactor(content, characters) {
       `,
     };
     const messages = [systemMessage, prompt];
-    const message = await generateText(messages);
-    // const completion = await openai.chat.completions.create({
-    //   messages,
-    //   model: "gpt-4o",
-    // });
+    //const message = await generateText(messages);
+    const message = (
+      await openai.chat.completions.create({
+        messages,
+        model: "llama3-70b-8192",
+      })
+    ).choices[0].message;
     messages.push(message);
     console.log(message.content);
     const json = message.content
@@ -313,7 +337,7 @@ async function extractCharactersFromStory(content) {
   messages.push(prompt);
   const completion = await openai.chat.completions.create({
     messages,
-    model: "gpt-4o",
+    model: "llama3-70b-8192",
   });
   messages.push(completion.choices[0].message);
   const json = completion.choices[0].message.content
@@ -332,4 +356,3 @@ exports.generateContinousStoryScenePrompts = generateContinousStoryScenePrompts;
 exports.generateStoryContentByCharactor = generateStoryContentByCharactor;
 exports.extractCharactersFromStory = extractCharactersFromStory;
 exports.generateStoryCoverPrompt = generateStoryCoverPrompt;
-

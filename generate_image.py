@@ -14,8 +14,8 @@ with open(sys.argv[1], "r") as file:
     pipeline = DiffusionPipeline.from_pretrained(
         model_id, torch_dtype=torch.bfloat16, use_safetensors=True
     ).to("cuda")
-    pipeline.enable_model_cpu_offload()
     pipeline.enable_xformers_memory_efficient_attention()
+
     compel = Compel(tokenizer=[pipeline.tokenizer, pipeline.tokenizer_2] , text_encoder=[pipeline.text_encoder, pipeline.text_encoder_2], returned_embeddings_type=ReturnedEmbeddingsType.PENULTIMATE_HIDDEN_STATES_NON_NORMALIZED, requires_pooled=[False, True])
     
     with torch.inference_mode():

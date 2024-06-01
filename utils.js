@@ -1,13 +1,13 @@
 const fs = require("fs");
 const path = require("path");
-const kill  = require('tree-kill');
+const kill = require("tree-kill");
 const util = require("util");
 const exec = util.promisify(require("child_process").exec);
 var Client = require("socket.engine").client;
-var { spawn } = require('child_process');
+var { spawn } = require("child_process");
 
 function createFolderIfNotExist(...pathParts) {
-  const folderPath = path.resolve(...pathParts)
+  const folderPath = path.resolve(...pathParts);
   if (!fs.existsSync(folderPath)) {
     fs.mkdirSync(folderPath, { recursive: true });
   }
@@ -32,31 +32,30 @@ async function executeExternalHelper(command, inputJson) {
 
 async function createAiSession(hostChannel) {
   const child = spawn("python", ["ai_session.py"]);
-  child.stdout.setEncoding('utf8');
+  child.stdout.setEncoding("utf8");
   const clientChannel = `${Math.random()}#client`;
-  
-  const promise = new Promise(resolve => {
-    child.stdout.on('data', function (data) {
-      console.log('stdout: ' + data);
+
+  const promise = new Promise((resolve) => {
+    child.stdout.on("data", function (data) {
+      console.log("stdout: " + data);
       resolve();
     });
   });
   await promise;
 
-  child.stderr.setEncoding('utf8');
-  child.stderr.on('data', function (data) {
+  child.stderr.setEncoding("utf8");
+  child.stderr.on("data", function (data) {
     //Here is where the error output goes
 
-    console.log('stderr: ' + data);
+    console.log("stderr: " + data);
 
     data = data.toString();
   });
 
-  child.on('close', function (code) {
+  child.on("close", function (code) {
     //Here you can get the exit code of the script
 
-    console.log('closing code: ' + code);
-
+    console.log("closing code: " + code);
   });
 
   const c = new Client();
@@ -65,18 +64,18 @@ async function createAiSession(hostChannel) {
   return {
     terminate: () => kill(child.pid),
     getDataFromHost: async () => {
-      const promise = new Promise(resolve => {
+      const promise = new Promise((resolve) => {
         c.on(clientChannel, (data) => {
           resolve(data);
         });
       });
       return await promise;
     },
-    writeDataToHost: (data, action) => c.write(hostChannel, { data, clientChannel, action })
-  }
+    writeDataToHost: (data, action) =>
+      c.write(hostChannel, { data, clientChannel, action }),
+  };
 }
 
 exports.createFolderIfNotExist = createFolderIfNotExist;
 exports.executeExternalHelper = executeExternalHelper;
 exports.createAiSession = createAiSession;
-

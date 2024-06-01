@@ -1,9 +1,7 @@
 const fs = require("fs");
 const path = require("path");
 const { createFolderIfNotExist } = require("./utils");
-const {
-  generateShortVideoResources,
-} = require("./generate_story_resources");
+const { generateShortVideoResources } = require("./generate_story_resources");
 const { renderShortVideo } = require("./render_video");
 
 async function createShortStories() {
@@ -17,7 +15,7 @@ async function createShortStories() {
       fs.writeFileSync(storyJsonPath, JSON.stringify(story));
     }
     await generateShortVideoResources(story.title);
-    const existingStory =  JSON.parse(fs.readFileSync(storyJsonPath, "utf8"));
+    const existingStory = JSON.parse(fs.readFileSync(storyJsonPath, "utf8"));
     if (fs.existsSync(existingStory.videoFile)) {
       continue;
     }

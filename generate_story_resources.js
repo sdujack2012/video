@@ -23,17 +23,16 @@ async function generateScenes(title) {
   const story = JSON.parse(fs.readFileSync(storyJsonPath, "utf8"));
   const { width, height } = sizeMapping[story.videoType];
 
-  story.coverImageFile = path.resolve(
-    storyImageFolder,
-    `cover.png`
-  );
+  story.coverImageFile = path.resolve(storyImageFolder, `cover.png`);
 
-  let imagesInfos = [{
-    outputFile: story.coverImageFile,
-    prompt: story.coverImagePrompt,
-    width,
-    height,
-  }];
+  let imagesInfos = [
+    {
+      outputFile: story.coverImageFile,
+      prompt: story.coverImagePrompt,
+      width,
+      height,
+    },
+  ];
 
   story.contentChunks.forEach((contentChunk, chunkIndex) => {
     contentChunk.transcript.forEach((segment, segmentIndex) => {
@@ -43,15 +42,17 @@ async function generateScenes(title) {
       );
       imagesInfos.push({
         outputFile: segment.sceneImageFile,
-        prompt: segment.sceneImagePrompts,
+        prompt: segment.sceneImagePrompt,
         width,
         height,
       });
     });
   });
 
-  imagesInfos = imagesInfos.filter(imagesInfo => !fs.existsSync(imagesInfo.outputFile));
-  
+  imagesInfos = imagesInfos.filter(
+    (imagesInfo) => !fs.existsSync(imagesInfo.outputFile)
+  );
+
   if (imagesInfos.length === 0) {
     console.log("Skip Generate generate images");
     return;
@@ -238,12 +239,14 @@ async function generateScenePrompts(title) {
   const storyJsonPath = path.resolve(storyFolder, "story.json");
   const story = JSON.parse(fs.readFileSync(storyJsonPath, "utf8"));
   if (!story.coverImagePrompt) {
-    story.coverImagePrompt = await generateStoryCoverPrompt(story.contentChunks[0].content, story.genre, story.characters);
+    story.coverImagePrompt = await generateStoryCoverPrompt(
+      story.contentChunks[0].content,
+      story.genre,
+      story.characters
+    );
     fs.writeFileSync(storyJsonPath, JSON.stringify(story));
-
   } else {
     console.log("Skip Generate generate cover image prompt");
-
   }
 
   if (story.hasImagePrompts) {
@@ -251,21 +254,20 @@ async function generateScenePrompts(title) {
     return;
   }
 
-
-
   for (let index = 0; index < story.contentChunks.length; index++) {
     const contentChunk = story.contentChunks[index];
     const promps = await generateContinousStoryScenePrompts(
       contentChunk.transcript.map((segment) => segment.text),
       story.genre,
-      story.characters,
+      story.characters
     );
     promps.forEach((promp, index) => {
-      contentChunk.transcript[index].sceneImagePrompts = promp;
+      contentChunk.transcript[index].sceneImagePrompt = promp;
     });
   }
 
   story.hasImagePrompts = true;
+  fs.writeFileSync(storyJsonPath, JSON.stringify(story));
 }
 async function generateStoryExtractInfo(title) {
   const storyFolder = createFolderIfNotExist("short_story", title);
@@ -279,8 +281,6 @@ async function generateStoryExtractInfo(title) {
   story.hasCharacters = true;
   fs.writeFileSync(storyJsonPath, JSON.stringify(story));
 }
-
-
 
 async function generateShortVideoResources(title) {
   await generateStoryExtractInfo(title);
