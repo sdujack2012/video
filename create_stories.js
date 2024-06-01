@@ -12,7 +12,7 @@ async function createShortStories() {
     const storyFolder = createFolderIfNotExist("short_story", story.title);
     const storyJsonPath = path.resolve(storyFolder, "story.json");
     if (!fs.existsSync(storyJsonPath)) {
-      fs.writeFileSync(storyJsonPath, JSON.stringify(story));
+      fs.writeFileSync(storyJsonPath, JSON.stringify(story, null, 4));
     }
     await generateShortVideoResources(story.title);
     const existingStory = JSON.parse(fs.readFileSync(storyJsonPath, "utf8"));

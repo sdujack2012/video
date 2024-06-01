@@ -60,7 +60,7 @@ async function generateScenes(title) {
 
   await batchGenerateImagesByPrompts(imagesInfos);
   story.hasImage = true;
-  fs.writeFileSync(storyJsonPath, JSON.stringify(story));
+  fs.writeFileSync(storyJsonPath, JSON.stringify(story, null, 4));
 }
 
 function splitLongTextIntoChunks(content) {
@@ -96,10 +96,6 @@ async function generateStoryAudios(title) {
   const storyAudioFolder = createFolderIfNotExist(storyFolder, "aduios");
 
   const story = JSON.parse(fs.readFileSync(storyJsonPath, "utf8"));
-  if (story.hasAudios) {
-    console.log("Skip generate auidos");
-    return;
-  }
   const narratorVoiceFile = "./speakers/matt.mp3";
 
   const audioFileInfos = [];
@@ -142,7 +138,7 @@ async function generateStoryAudios(title) {
     }));
 
   story.hasContentChuncks = true;
-  fs.writeFileSync(storyJsonPath, JSON.stringify(story));
+  fs.writeFileSync(storyJsonPath, JSON.stringify(story, null, 4));
 
   const characterVoiceFileMappings = {};
 
@@ -187,7 +183,7 @@ async function generateStoryAudios(title) {
   });
 
   console.log(story);
-  fs.writeFileSync(storyJsonPath, JSON.stringify(story));
+  fs.writeFileSync(storyJsonPath, JSON.stringify(story, null, 4));
 
   audioFileInfos.push(
     ...story.contentChunks.map((contentChunk) => ({
@@ -202,7 +198,11 @@ async function generateStoryAudios(title) {
     (audioFileInfo) => !fs.existsSync(audioFileInfo.outputFile)
   );
 
-  console.log("audioFileInfos", audioFileInfosToCreate);
+  if (audioFileInfosToCreate.length === 0) {
+    console.log("Skipping generating audios");
+    return;
+  }
+
   await batchGenerateAudios(audioFileInfosToCreate);
   story.hasAudios = true;
   let totalDuration = 0;
@@ -210,7 +210,7 @@ async function generateStoryAudios(title) {
     totalDuration += await getAudioDurationInSeconds(audioFileInfo.outputFile);
   }
   story.videoType = totalDuration > 51 ? "standard" : "short";
-  fs.writeFileSync(storyJsonPath, JSON.stringify(story));
+  fs.writeFileSync(storyJsonPath, JSON.stringify(story, null, 4));
 }
 
 async function generateTranscript(title) {
@@ -231,7 +231,7 @@ async function generateTranscript(title) {
   });
 
   story.hasTranscripts = true;
-  fs.writeFileSync(storyJsonPath, JSON.stringify(story));
+  fs.writeFileSync(storyJsonPath, JSON.stringify(story, null, 4));
 }
 
 async function generateScenePrompts(title) {
@@ -244,7 +244,7 @@ async function generateScenePrompts(title) {
       story.genre,
       story.characters
     );
-    fs.writeFileSync(storyJsonPath, JSON.stringify(story));
+    fs.writeFileSync(storyJsonPath, JSON.stringify(story, null, 4));
   } else {
     console.log("Skip Generate generate cover image prompt");
   }
@@ -256,6 +256,10 @@ async function generateScenePrompts(title) {
 
   for (let index = 0; index < story.contentChunks.length; index++) {
     const contentChunk = story.contentChunks[index];
+    const skipGenerateImagePrompts = contentChunk.transcript.every(
+      (segment) => segment.sceneImagePrompt
+    );
+    if (skipGenerateImagePrompts) continue;
     const promps = await generateContinousStoryScenePrompts(
       contentChunk.transcript.map((segment) => segment.text),
       story.genre,
@@ -267,7 +271,7 @@ async function generateScenePrompts(title) {
   }
 
   story.hasImagePrompts = true;
-  fs.writeFileSync(storyJsonPath, JSON.stringify(story));
+  fs.writeFileSync(storyJsonPath, JSON.stringify(story, null, 4));
 }
 async function generateStoryExtractInfo(title) {
   const storyFolder = createFolderIfNotExist("short_story", title);
@@ -279,7 +283,7 @@ async function generateStoryExtractInfo(title) {
   }
   story.characters = await extractCharactersFromStory(story.content);
   story.hasCharacters = true;
-  fs.writeFileSync(storyJsonPath, JSON.stringify(story));
+  fs.writeFileSync(storyJsonPath, JSON.stringify(story, null, 4));
 }
 
 async function generateShortVideoResources(title) {
