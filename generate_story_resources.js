@@ -190,7 +190,7 @@ async function generateStoryAudios(title) {
   fs.writeFileSync(storyJsonPath, JSON.stringify(story));
 
   audioFileInfos.push(
-    ...story.contentChunks.map((contentChunk, index) => ({
+    ...story.contentChunks.map((contentChunk) => ({
       text: contentChunk.content,
       outputFile: contentChunk.audioFile,
       speakerVoiceFile: characterVoiceFileMappings[contentChunk.character]

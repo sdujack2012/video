@@ -195,7 +195,7 @@ async function generateContinousStoryScenePrompts(
   let messages = [systemMessage];
   const scenePrompts = [];
 
-  for (scenceDescription of scenceDescriptions) {
+  for (let scenceDescription of scenceDescriptions) {
     const prompt = {
       role: "user",
       content: `

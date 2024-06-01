@@ -1,1 +1,13 @@
-{ "python.terminal.activateEnvironment": true }
+{
+  "python.terminal.activateEnvironment": true,
+  "explorer.confirmDelete": false,
+  "terminal.integrated.defaultProfile.windows": "Command Prompt",
+  "explorer.confirmDragAndDrop": false,
+  "editor.defaultFormatter": "esbenp.prettier-vscode",
+  "prettier.prettierPath": "./node_modules/prettier",
+  "editor.formatOnSave": true,
+  "editor.codeActionsOnSave": {
+    "source.fixAll.eslint": "explicit"
+  },
+  "eslint.validate": ["javascript"]
+}
