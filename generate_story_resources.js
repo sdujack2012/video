@@ -286,7 +286,7 @@ async function generateStoryExtractInfo(title) {
   fs.writeFileSync(storyJsonPath, JSON.stringify(story, null, 4));
 }
 
-async function generateShortVideoResources(title) {
+async function generateVideoResources(title) {
   await generateStoryExtractInfo(title);
   await generateStoryAudios(title);
   await generateTranscript(title);
@@ -294,8 +294,8 @@ async function generateShortVideoResources(title) {
   await generateScenes(title);
 }
 
-exports.generateShortVideoResources = generateShortVideoResources;
+exports.generateVideoResources = generateVideoResources;
 
-if (require.main === module && process.argv[2] && process.argv[2].length > 10) {
-  generateShortVideoResources(process.argv[2]);
+if (require.main === module && process.argv[2]) {
+  generateVideoResources(process.argv[2]);
 }
