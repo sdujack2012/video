@@ -2,10 +2,10 @@ const fs = require("fs");
 const path = require("path");
 const axios = require("axios");
 const OpenAI = require("openai");
-const apiKey = fs.readFileSync("./apikey", "utf8");
+const apiKey = JSON.parse(fs.readFileSync("./apikey.json", "utf8"));
 const { executeExternalHelper } = require("./utils");
 const openai = new OpenAI({
-  apiKey: "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",
+  apiKey: apiKey.groq,
   baseURL: "https://api.groq.com/openai/v1",
 });
 
