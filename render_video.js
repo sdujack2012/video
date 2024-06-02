@@ -257,8 +257,9 @@ ${subtitles.join("\n")}
     );
 
     // mix video with audio
-    const silencePaddingAfter =
+    let silencePaddingAfter =
       videoDuration - audioConfig.startTime - audioConfig.duration;
+    silencePaddingAfter = silencePaddingAfter > 0 ? silencePaddingAfter : 0;
     const videoWithAudioPath = path.resolve(
       storyTempFolder,
       `video_audio_${index}.mkv`

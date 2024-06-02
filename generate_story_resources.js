@@ -160,6 +160,8 @@ async function generateStoryAudios(title) {
     "./speakers/woman 2.mp3",
     "./speakers/woman 3.mp3",
     "./speakers/woman 4.mp3",
+    "./speakers/woman 5.mp3",
+    "./speakers/woman 6.mp3",
   ];
 
   const femaleCharacters = story.characters.filter(
@@ -253,22 +255,21 @@ async function generateScenePrompts(title) {
     console.log("Skip Generate generate image prompt");
     return;
   }
+  const segments = story.contentChunks.flatMap(
+    (contentChunk) => contentChunk.transcript
+  );
 
-  for (let index = 0; index < story.contentChunks.length; index++) {
-    const contentChunk = story.contentChunks[index];
-    const skipGenerateImagePrompts = contentChunk.transcript.every(
-      (segment) => segment.sceneImagePrompt
-    );
-    if (skipGenerateImagePrompts) continue;
-    const promps = await generateContinousStoryScenePrompts(
-      contentChunk.transcript.map((segment) => segment.text),
-      story.genre,
-      story.characters
-    );
-    promps.forEach((promp, index) => {
-      contentChunk.transcript[index].sceneImagePrompt = promp;
-    });
-  }
+  const sceneDescriptions = segments.map((segment) => segment.text);
+
+  const sceneImagePrompts = await generateContinousStoryScenePrompts(
+    sceneDescriptions,
+    story.genre,
+    story.characters
+  );
+
+  sceneImagePrompts.forEach((sceneImagePrompt, index) => {
+    segments[index].sceneImagePrompt = sceneImagePrompt;
+  });
 
   story.hasImagePrompts = true;
   fs.writeFileSync(storyJsonPath, JSON.stringify(story, null, 4));
