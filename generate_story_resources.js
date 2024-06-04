@@ -35,17 +35,16 @@ async function generateScenes(title) {
   ];
 
   story.contentChunks.forEach((contentChunk, chunkIndex) => {
-    contentChunk.transcript.forEach((segment, segmentIndex) => {
-      segment.sceneImageFile = path.resolve(
-        storyImageFolder,
-        `scene ${chunkIndex + 1}_${segmentIndex + 1}.png`
-      );
-      imagesInfos.push({
-        outputFile: segment.sceneImageFile,
-        prompt: segment.sceneImagePrompt,
-        width,
-        height,
-      });
+    contentChunk.sceneImageFile = path.resolve(
+      storyImageFolder,
+      `scene ${chunkIndex + 1}.png`
+    );
+
+    imagesInfos.push({
+      outputFile: contentChunk.sceneImageFile,
+      prompt: contentChunk.sceneImagePrompt,
+      width,
+      height,
     });
   });
 
@@ -64,8 +63,8 @@ async function generateScenes(title) {
 }
 
 function splitLongTextIntoChunks(content) {
-  const chunckSize = 500;
-  const separators = ["\n", ".", ";", "?"];
+  const chunckSize = 200;
+  const separators = ["\n", ".", ";", "?", "!"];
   const chuncks = [...content]
     .reduce(
       (mergedChunks, char) => {
@@ -106,21 +105,6 @@ async function generateStoryAudios(title) {
     speakerVoiceFile: narratorVoiceFile,
   });
 
-  //create content chuncks and the audio file names
-  if (!story.hasContentChuncks) {
-    if (!story.contentChunks) {
-      story.contentChunks = await generateStoryContentByCharactor(
-        story.content,
-        story.characters
-      );
-    } else {
-      story.contentChunks = story.contentChunks.map((contentChunk, index) => ({
-        ...contentChunk,
-        audioFile: path.resolve(storyAudioFolder, `chunk ${index + 1}.mp3`),
-      }));
-    }
-  }
-
   story.contentChunks = story.contentChunks
     .reduce((splitedChuncks, contentChunk) => {
       const currentSplitChunks = splitLongTextIntoChunks(contentChunk.content);
@@ -151,6 +135,17 @@ async function generateStoryAudios(title) {
     "./speakers/man 2.mp3",
     "./speakers/man 3.mp3",
     "./speakers/jeff.mp3",
+    "./speakers/man 4.mp3",
+    "./speakers/man 5.mp3",
+    "./speakers/man 6.mp3",
+    "./speakers/man 7.mp3",
+    "./speakers/man 8.mp3",
+    "./speakers/man 9.mp3",
+    "./speakers/man 10.mp3",
+    "./speakers/man 11.mp3",
+    "./speakers/man 12.mp3",
+    "./speakers/man 13.mp3",
+    "./speakers/man 14.mp3",
   ];
 
   const femaleVoiceFiles = [
@@ -164,6 +159,8 @@ async function generateStoryAudios(title) {
     "./speakers/woman 6.mp3",
     "./speakers/woman 7.mp3",
     "./speakers/woman 8.mp3",
+    "./speakers/woman 9.mp3",
+    "./speakers/woman 10.mp3",
   ];
 
   const femaleCharacters = story.characters.filter(
@@ -217,6 +214,25 @@ async function generateStoryAudios(title) {
   fs.writeFileSync(storyJsonPath, JSON.stringify(story, null, 4));
 }
 
+async function generateCharacterLines(title) {
+  const storyFolder = createFolderIfNotExist("short_story", title);
+  const storyJsonPath = path.resolve(storyFolder, "story.json");
+  const story = JSON.parse(fs.readFileSync(storyJsonPath, "utf8"));
+
+  if (story.hasContentChuncks) {
+    console.log("Skip generating character lines");
+    return;
+  }
+
+  story.contentChunks = await generateStoryContentByCharactor(
+    story.content,
+    story.characters
+  );
+
+  story.hasContentChuncks = true;
+  fs.writeFileSync(storyJsonPath, JSON.stringify(story, null, 4));
+}
+
 async function generateTranscript(title) {
   const storyFolder = createFolderIfNotExist("short_story", title);
   const storyJsonPath = path.resolve(storyFolder, "story.json");
@@ -257,11 +273,9 @@ async function generateScenePrompts(title) {
     console.log("Skip Generate generate image prompt");
     return;
   }
-  const segments = story.contentChunks.flatMap(
-    (contentChunk) => contentChunk.transcript
+  const sceneDescriptions = story.contentChunks.map(
+    (contentChunk) => contentChunk.content
   );
-
-  const sceneDescriptions = segments.map((segment) => segment.text);
 
   const sceneImagePrompts = await generateContinousStoryScenePrompts(
     sceneDescriptions,
@@ -269,8 +283,8 @@ async function generateScenePrompts(title) {
     story.characters
   );
 
-  sceneImagePrompts.forEach((sceneImagePrompt, index) => {
-    segments[index].sceneImagePrompt = sceneImagePrompt;
+  story.contentChunks.forEach((contentChunk, index) => {
+    contentChunk.sceneImagePrompt = sceneImagePrompts[index];
   });
 
   story.hasImagePrompts = true;
@@ -291,6 +305,7 @@ async function generateStoryExtractInfo(title) {
 
 async function generateVideoResources(title) {
   await generateStoryExtractInfo(title);
+  await generateCharacterLines(title);
   await generateStoryAudios(title);
   await generateTranscript(title);
   await generateScenePrompts(title);
@@ -298,6 +313,12 @@ async function generateVideoResources(title) {
 }
 
 exports.generateVideoResources = generateVideoResources;
+exports.generateStoryExtractInfo = generateStoryExtractInfo;
+exports.generateStoryAudios = generateStoryAudios;
+exports.generateTranscript = generateTranscript;
+exports.generateScenePrompts = generateScenePrompts;
+exports.generateScenes = generateScenes;
+exports.generateCharacterLines = generateCharacterLines;
 
 if (require.main === module && process.argv[2]) {
   generateVideoResources(process.argv[2]);

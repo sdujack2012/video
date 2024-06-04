@@ -1,7 +1,15 @@
 const fs = require("fs");
 const path = require("path");
 const { createFolderIfNotExist } = require("./utils");
-const { generateVideoResources } = require("./generate_story_resources");
+const {
+  generateVideoResources,
+  generateStoryExtractInfo,
+  generateStoryAudios,
+  generateTranscript,
+  generateScenePrompts,
+  generateCharacterLines,
+  generateScenes,
+} = require("./generate_story_resources");
 const { renderVideo } = require("./render_video");
 
 async function createShortStories() {
@@ -15,6 +23,13 @@ async function createShortStories() {
       fs.writeFileSync(storyJsonPath, JSON.stringify(story, null, 4));
     }
     await generateVideoResources(story.title);
+    // await generateStoryExtractInfo(story.title);
+    // await generateCharacterLines(story.title);
+    // await generateStoryAudios(story.title);
+    // await generateTranscript(story.title);
+    // await generateScenePrompts(story.title);
+    // await generateScenes(story.title);
+
     const existingStory = JSON.parse(fs.readFileSync(storyJsonPath, "utf8"));
     if (fs.existsSync(existingStory.videoFile) && existingStory.hasVideo) {
       console.log("Skip rendering video");

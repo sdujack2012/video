@@ -129,63 +129,60 @@ async function renderVideo(topic) {
     const videoConfigClip = {};
     const clipImages = [];
     const clipWords = [];
-
+    const audioDuration = await getAudioDurationInSeconds(
+      contentChunk.audioFile
+    );
     const audioConfig = {
       startTime: clipGappingTime,
       filePath: contentChunk.audioFile,
-      duration: await getAudioDurationInSeconds(contentChunk.audioFile),
+      duration: audioDuration,
     };
 
-    //collect images and words
-    contentChunk.transcript.forEach(
-      ({ sceneImageFile, start, end, words }, index) => {
-        const nextSegement =
-          contentChunk.transcript.length > index + 1
-            ? contentChunk.transcript[index + 1]
-            : null;
-        clipImages.push({
-          filePath: sceneImageFile,
-          duration: (nextSegement ? nextSegement.start : end) - start,
-        });
-        const wordCountLimit = 6;
-        const individualWords = words.map((word) => word.word);
-
-        words.forEach((word, innerIndex) => {
-          const numberOfChunks = Math.ceil(
-            individualWords.length / wordCountLimit
-          );
-          const chunkSize = Math.ceil(individualWords.length / numberOfChunks);
-          const wordChunkStart = Math.floor(innerIndex / chunkSize) * chunkSize;
-          let wordChunkEnd =
-            (Math.floor(innerIndex / chunkSize) + 1) * chunkSize + 1;
-          wordChunkEnd =
-            wordChunkEnd > individualWords.length
-              ? individualWords.length
-              : wordChunkEnd;
-          word.words = individualWords.slice(wordChunkStart, wordChunkEnd);
-          word.end =
-            innerIndex < words.length - 1
-              ? words[innerIndex + 1].start
-              : word.end;
-          word.innerIndex = innerIndex - wordChunkStart;
-        });
-        clipWords.push(...words);
+    clipImages.push(
+      {
+        filePath: contentChunk.sceneImageFile,
+        duration: audioDuration + 2 * clipImages,
+      },
+      //workaround for ffmpng bug for duration
+      {
+        filePath: contentChunk.sceneImageFile,
+        duration: 0,
       }
     );
+
+    //collect subtitles
+    contentChunk.transcript.forEach(({ words }) => {
+      const wordCountLimit = 6;
+      const individualWords = words.map((word) => word.word);
+
+      words.forEach((word, innerIndex) => {
+        const numberOfChunks = Math.ceil(
+          individualWords.length / wordCountLimit
+        );
+        const chunkSize = Math.ceil(individualWords.length / numberOfChunks);
+        const wordChunkStart = Math.floor(innerIndex / chunkSize) * chunkSize;
+        let wordChunkEnd =
+          (Math.floor(innerIndex / chunkSize) + 1) * chunkSize + 1;
+        wordChunkEnd =
+          wordChunkEnd > individualWords.length
+            ? individualWords.length
+            : wordChunkEnd;
+        word.words = individualWords.slice(wordChunkStart, wordChunkEnd);
+        word.end =
+          innerIndex < words.length - 1
+            ? words[innerIndex + 1].start
+            : word.end;
+        word.innerIndex = innerIndex - wordChunkStart;
+      });
+      clipWords.push(...words);
+    });
 
     // add gapping time
     clipWords.forEach((clipWord) => {
       clipWord.end += clipGappingTime;
       clipWord.start += clipGappingTime;
     });
-    clipImages[0].duration += clipGappingTime;
-    const lastClipImage = clipImages.slice(-1)[0];
-    lastClipImage.duration += clipGappingTime;
-    //workaround for ffmpng bug for duration
-    clipImages.push({
-      ...lastClipImage,
-      duration: 0,
-    });
+
     // add the clip config
     videoConfigClip.audioConfig = audioConfig;
     videoConfigClip.clipImages = clipImages;

@@ -2,12 +2,34 @@ const fs = require("fs");
 const path = require("path");
 const axios = require("axios");
 const OpenAI = require("openai");
-const apiKey = JSON.parse(fs.readFileSync("./apikey.json", "utf8"));
 const { executeExternalHelper } = require("./utils");
-const openai = new OpenAI({
-  apiKey: apiKey.groq,
-  baseURL: "https://api.groq.com/openai/v1",
-});
+
+async function generateTextOpenAI(messages, provider, model) {
+  const apiKeys = JSON.parse(fs.readFileSync("./apikey.json", "utf8"));
+  const baseURLs = {
+    openAI: undefined,
+    groq: "https://api.groq.com/openai/v1",
+    hf: "https://rhlobdgx0viuipyy.us-east-1.aws.endpoints.huggingface.cloud/v1/",
+  };
+  const apiKey = apiKeys[provider];
+  const baseURL = baseURLs[provider];
+
+  if (!apiKey || (!baseURL && provider !== "openAI")) {
+    throw `Error: apiKey ${apiKey} or baseURL ${baseURL}`;
+  }
+
+  const openai = new OpenAI({
+    apiKey,
+    baseURL,
+  });
+
+  const res = await openai.chat.completions.create({
+    messages,
+    model,
+  });
+
+  return res.choices[0].message;
+}
 
 async function generateImage(prompt, width, height) {
   const response = await axios.get(
@@ -169,12 +191,12 @@ async function generateStoryCoverPrompt(content, genre, characters) {
   const messages = [systemMessage, prompt];
 
   messages.push(prompt);
-  const completion = await openai.chat.completions.create({
+  const message = await generateTextOpenAI(
     messages,
-    model: "llama3-70b-8192",
-  });
-
-  return completion.choices[0].message.content;
+    "openAI",
+    "gpt-3.5-turbo-0125"
+  );
+  return message.content;
 }
 
 async function generateContinousStoryScenePrompts(
@@ -212,12 +234,12 @@ async function generateContinousStoryScenePrompts(
     messages.push(prompt);
     // const message = await generateText(messages);
 
-    const message = (
-      await openai.chat.completions.create({
-        messages,
-        model: "llama3-70b-8192",
-      })
-    ).choices[0].message;
+    const message = await generateTextOpenAI(
+      messages,
+      "openAI",
+      "gpt-3.5-turbo-0125"
+    );
+
     messages.push(message);
     console.log(message);
     scenePrompts.push(message.content);
@@ -237,7 +259,7 @@ async function generateStoryContentByCharactor(content, characters) {
     I will give you a story segment by segment. 
     I want you to separate narrative from dialogs and if it is a dialog please also identify the charactor who speaks it.
     Then put all narratives and dialogs in temporal order, in the json with the format of [{type: "narrative"|"dialog", content, character }]
-    Please strictly distinguish narratives and dialogs
+    Please strictly distinguish narratives and dialogs. Please provide a valid json string with proper closing tags at all time
     `,
   };
 
@@ -268,17 +290,17 @@ async function generateStoryContentByCharactor(content, characters) {
       Then put all narratives and dialogs in temporal order, in the json with the format of [{type: "narrative"|"dialog", content, character }] 
       segment: ${contentChunk}
       
-      Please only output the raw json and don't include any additional messaging and formatting
+      Please only output the raw json and don't include any additional messaging and formatting. Please provide a valid json string with proper closing tags at all time
       `,
     };
     const messages = [systemMessage, prompt];
     //const message = await generateText(messages);
-    const message = (
-      await openai.chat.completions.create({
-        messages,
-        model: "llama3-70b-8192",
-      })
-    ).choices[0].message;
+    const message = await generateTextOpenAI(
+      messages,
+      "openAI",
+      "gpt-3.5-turbo-0125"
+    );
+
     messages.push(message);
     console.log(message.content);
     const json = message.content
@@ -335,12 +357,11 @@ async function extractCharactersFromStory(content) {
     `,
   };
   messages.push(prompt);
-  const completion = await openai.chat.completions.create({
-    messages,
-    model: "llama3-70b-8192",
-  });
-  messages.push(completion.choices[0].message);
-  const json = completion.choices[0].message.content
+
+  const message = await generateTextOpenAI(messages, "openAI", "gpt-4o");
+
+  messages.push(message);
+  const json = message.content
     .replace("```json", "")
     .replace("```", "")
     .replace("...", "");
