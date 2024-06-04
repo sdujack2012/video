@@ -162,6 +162,8 @@ async function generateStoryAudios(title) {
     "./speakers/woman 4.mp3",
     "./speakers/woman 5.mp3",
     "./speakers/woman 6.mp3",
+    "./speakers/woman 7.mp3",
+    "./speakers/woman 8.mp3",
   ];
 
   const femaleCharacters = story.characters.filter(

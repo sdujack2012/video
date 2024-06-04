@@ -50,7 +50,7 @@ const subtitleFontSizes = {
 
 const clipGappingTime = 0.5;
 
-async function renderShortVideo(topic) {
+async function renderVideo(topic) {
   const current = Date.now();
   const storyFolder = createFolderIfNotExist("short_story", topic);
   const storyVideoFolder = createFolderIfNotExist(storyFolder, "videos");
@@ -95,11 +95,7 @@ async function renderShortVideo(topic) {
   ctx.font = '60px "Title font"';
   ctx.fillStyle = titleFontColor;
   const titleWidth = ctx.measureText(story.title).width;
-  ctx.fillText(
-    story.title,
-    canvas.width / 2 - titleWidth / 2,
-    canvas.height / 2
-  );
+  ctx.fillText(story.title, canvas.width / 2 - titleWidth / 2, 150);
   const coverImageWithTitlePath = path.resolve(
     storyTempFolder,
     `cover_image_with_title.png`
@@ -264,7 +260,7 @@ ${subtitles.join("\n")}
       storyTempFolder,
       `video_audio_${index}.mkv`
     );
-    const mixAudioVideoCommand = `ffmpeg -i "${videoImagesPath}" -f lavfi -t "${audioConfig.startTime}" -i anullsrc=channel_layout=stereo:sample_rate=44100 -i "${audioConfig.filePath}" ${silencePaddingAfter > 0 ? `-f lavfi -t "${silencePaddingAfter}" -i anullsrc=channel_layout=stereo:sample_rate=44100` : ""} -filter_complex "[1][2]${silencePaddingAfter > 0 ? "[3]" : ""} concat=n=${silencePaddingAfter > 0 ? "3" : "2"}:v=0:a=1[outa]"  -c:v copy -map 0:v -map "[outa]" -y "${videoWithAudioPath}"`;
+    const mixAudioVideoCommand = `ffmpeg -i "${videoImagesPath}" -f lavfi -t "${audioConfig.startTime}" -i anullsrc=channel_layout=stereo:sample_rate=44100 -i "${audioConfig.filePath}" ${silencePaddingAfter > 0 ? `-f lavfi -t "${silencePaddingAfter}" -i anullsrc=channel_layout=stereo:sample_rate=44100` : ""} -filter_complex "[1][2]${silencePaddingAfter > 0 ? "[3]" : ""} concat=n=${silencePaddingAfter > 0 ? "3" : "2"}:v=0:a=1[outa]" -shortest -c:v copy -map 0:v -map "[outa]" -y "${videoWithAudioPath}"`;
     await exec(mixAudioVideoCommand);
 
     //add subtitle
@@ -297,11 +293,18 @@ ${subtitles.join("\n")}
   await exec(
     `ffmpeg -i "${mergedVideoPath}" -stream_loop -1 -i "${bgm}" -filter_complex "[0:a][1:a] amix=inputs=2:duration=first[outa]" -c:v copy -c:s copy -c:a aac -map 0:v -map 0:s -map "[outa]" -y "${finalVideoPath}"`
   );
+
+  const originalStory = JSON.parse(fs.readFileSync(storyJsonPath, "utf8"));
+
+  originalStory.videoFile = finalVideoPath;
+
+  originalStory.hasVideo = true;
+  fs.writeFileSync(storyJsonPath, JSON.stringify(originalStory, null, 4));
   console.log("time elapsed:", Date.now() - current);
 }
 
 if (require.main === module && process.argv[2]) {
-  renderShortVideo(process.argv[2]);
+  renderVideo(process.argv[2]);
 }
 
-exports.renderShortVideo = renderShortVideo;
+exports.renderVideo = renderVideo;
