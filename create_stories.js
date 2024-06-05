@@ -35,6 +35,7 @@ async function createShortStories() {
       console.log("Skip rendering video");
       continue;
     }
+    console.log("Rendering video");
     await renderVideo(story.title);
   }
 }

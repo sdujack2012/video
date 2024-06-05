@@ -4,10 +4,15 @@
     {
       "label": "Active env",
       "type": "shell",
-      "command": "docker compose -f ./story-docker/compose.yaml up --build",
-      "windows": {
-        "command": "docker compose -f ./story-docker/compose.yaml up --build"
-      },
+
+      // "command": "ollama run llama3_custom",
+      // "windows": {
+      //   "command": "ollama run llama3_custom"
+      // },
+      // "command": "docker compose -f ./story-docker/compose.yaml up --build",
+      // "windows": {
+      //   "command": "docker compose -f ./story-docker/compose.yaml up --build"
+      // },
       "group": "none",
       "presentation": {
         "reveal": "always",

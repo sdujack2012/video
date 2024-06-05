@@ -30,6 +30,14 @@ async function executeExternalHelper(command, inputJson) {
   }
 }
 
+async function startOllama() {
+  const child = spawn("ollama", ["run", "llama3_custom"]);
+
+  return {
+    terminate: () => kill(child.pid),
+  };
+}
+
 async function createAiSession(hostChannel) {
   const child = spawn("python", ["ai_session.py"]);
   child.stdout.setEncoding("utf8");
@@ -79,3 +87,4 @@ async function createAiSession(hostChannel) {
 exports.createFolderIfNotExist = createFolderIfNotExist;
 exports.executeExternalHelper = executeExternalHelper;
 exports.createAiSession = createAiSession;
+exports.startOllama = startOllama;

@@ -10,6 +10,7 @@ async function generateTextOpenAI(messages, provider, model) {
     openAI: undefined,
     groq: "https://api.groq.com/openai/v1",
     hf: "https://rhlobdgx0viuipyy.us-east-1.aws.endpoints.huggingface.cloud/v1/",
+    ollama: "http://localhost:11434/v1/",
   };
   const apiKey = apiKeys[provider];
   const baseURL = baseURLs[provider];
@@ -191,11 +192,7 @@ async function generateStoryCoverPrompt(content, genre, characters) {
   const messages = [systemMessage, prompt];
 
   messages.push(prompt);
-  const message = await generateTextOpenAI(
-    messages,
-    "openAI",
-    "gpt-3.5-turbo-0125"
-  );
+  const message = await generateTextOpenAI(messages, "ollama", "llama3_custom");
   return message.content;
 }
 
@@ -223,12 +220,13 @@ async function generateContinousStoryScenePrompts(
       content: `
       Now write a Stable Diffusion prompt for the following scene ${scenceDescription} based on the formula. 
       Please consider the context of the story provided and then fill the formula. 
-      Please be as specific as possible about the surrounding, the backgroup and the style needs to match the genre type ${genre} 
+      Please don't include the conversations directly into the prmpt and instead, be as specific as possible about the characters' appearance, what they are doing and the surrounding. The style needs to match the genre type ${genre} 
+      Please use very concise lanaguages. 
       Please also include the character's appearance and name specified in this json ${JSON.stringify(characters)} when you refering to the characters
       Please only output the prompt concise in plain text and don't include anything else. 
       `,
     };
-    if (messages.length > 10) {
+    if (messages.length > 5) {
       messages = [systemMessage];
     }
     messages.push(prompt);
@@ -236,8 +234,8 @@ async function generateContinousStoryScenePrompts(
 
     const message = await generateTextOpenAI(
       messages,
-      "openAI",
-      "gpt-3.5-turbo-0125"
+      "ollama",
+      "llama3_custom"
     );
 
     messages.push(message);
@@ -253,13 +251,12 @@ async function generateStoryContentByCharactor(content, characters) {
   const systemMessage = {
     role: "system",
     content: `
-    Below are the charactors in a story:  ${JSON.stringify(
-      characters
-    )} in json format
-    I will give you a story segment by segment. 
-    I want you to separate narrative from dialogs and if it is a dialog please also identify the charactor who speaks it.
-    Then put all narratives and dialogs in temporal order, in the json with the format of [{type: "narrative"|"dialog", content, character }]
-    Please strictly distinguish narratives and dialogs. Please provide a valid json string with proper closing tags at all time
+Below are the characters in the story: ${JSON.stringify(characters)} (in JSON format).
+I will provide you with the story segment by segment. Please:
+Separate the narrative from the dialogues.
+For dialogues, identify the character who speaks it.
+Put all narratives and dialogues in temporal order in JSON format, using the structure: [{"type": "narrative" | "dialog", "content": "text", "character": "name"}].
+Ensure that narratives and dialogues are strictly distinguished. Always provide a valid JSON string with proper closing tags.
     `,
   };
 
@@ -271,7 +268,7 @@ async function generateStoryContentByCharactor(content, characters) {
     .reduce(
       (mergedChunks, contentChunk) => {
         let currentMergedChunk = mergedChunks[mergedChunks.length - 1];
-        if (currentMergedChunk.length > 10000) {
+        if (currentMergedChunk.length > 2000) {
           mergedChunks.push(contentChunk);
         } else {
           currentMergedChunk = [currentMergedChunk, contentChunk].join("\n");
@@ -286,29 +283,48 @@ async function generateStoryContentByCharactor(content, characters) {
     const prompt = {
       role: "user",
       content: `
-      Now, for the following story segment, I want you to separate narrative from dialogs and if it is a dialog please also identify the charactor who speaks it.
-      Then put all narratives and dialogs in temporal order, in the json with the format of [{type: "narrative"|"dialog", content, character }] 
-      segment: ${contentChunk}
-      
-      Please only output the raw json and don't include any additional messaging and formatting. Please provide a valid json string with proper closing tags at all time
+For the following story segment, please:
+
+Separate the narrative from the dialogues.
+For dialogues, identify the character who speaks them.
+Arrange all narratives and dialogues in temporal order in the JSON format: [{"type": "narrative"|"dialog", "content": "text", "character": "name"}].
+Segment: ${contentChunk}
+
+Output: Only provide the raw JSON string without any additional messages or formatting. Ensure the JSON string is valid with proper closing tags.
       `,
     };
     const messages = [systemMessage, prompt];
+
+    const retry = 10;
+    let currentRetry = 0;
+    let generated = false;
     //const message = await generateText(messages);
-    const message = await generateTextOpenAI(
-      messages,
-      "openAI",
-      "gpt-3.5-turbo-0125"
-    );
+    while (currentRetry < retry) {
+      try {
+        const message = await generateTextOpenAI(
+          messages,
+          "openAI",
+          "gpt-3.5-turbo-0125"
+        );
 
-    messages.push(message);
-    console.log(message.content);
-    const json = message.content
-      .replace("```json", "")
-      .replace("```", "")
-      .replace("...", "");
+        console.log(message.content);
+        const json = message.content
+          .replace("```json", "")
+          .replace("```", "")
+          .replace("...", "");
 
-    storyLines.push(...JSON.parse(json));
+        storyLines.push(...JSON.parse(json));
+        generated = true;
+        break;
+      } catch (ex) {
+        console.log("Error creating story lines", ex);
+        currentRetry++;
+      }
+    }
+
+    if (!generated) {
+      throw "Error creating story lines";
+    }
   }
 
   //merged consective chunks of the same characters
@@ -339,7 +355,7 @@ async function extractCharactersFromStory(content) {
     role: "system",
     content: `
     I will give you a story. 
-    I want you to extract all characters from the story into a json in the format of [{name, gender, appearance, voiceType}]
+    I want you to extract all main characters from the story into a json in the format of [{name, gender, appearance, voiceType}]
     For gender, appearance and voiceType, please use your best knowledge. You can make up gender, appearance and voiceType if not specified in the story
     `,
   };
@@ -348,12 +364,21 @@ async function extractCharactersFromStory(content) {
   const prompt = {
     role: "user",
     content: `
-    Now, for the following story, I want you to extract all characters from the story into a json in the format of [{name, gender, appearance, voiceType}]
-    For gender, appearance and voiceType, please use your best knowledge. You can make up gender, appearance and voiceType if not specified in the story.
-    Please be very specific about the characters' appearance, including their race, eyes and other facial features, skin color, hair color, age, body type, what they wear and their colors, and anything you can think of 
-    story: ${content}
-    
-    Please only output the raw json and don't include any additional messaging and formatting
+      For the following story, please extract all main characters into a JSON array with the format: [{"name": "character name", "gender": "character gender", "appearance": "detailed appearance", "voiceType": "character voice type"}].
+
+      Only include characters that play a significant role in the story. If gender, appearance, or voice type is not specified, use your best judgment to make them up. Be very specific about the characters' appearance, including:
+
+      Race
+      Eye and other facial features
+      Skin color
+      Hair color
+      Age
+      Body type
+      Clothing and its colors
+      Any other relevant details
+      Story: ${content}
+
+      Output: Only provide the raw JSON string without any additional messages or formatting.
     `,
   };
   messages.push(prompt);

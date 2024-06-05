@@ -1,6 +1,6 @@
 const fs = require("fs");
 const path = require("path");
-const { createFolderIfNotExist } = require("./utils");
+const { createFolderIfNotExist, startOllama } = require("./utils");
 const {
   batchGenerateImagesByPrompts,
   batchGenerateAudios,
@@ -53,7 +53,7 @@ async function generateScenes(title) {
   );
 
   if (imagesInfos.length === 0) {
-    console.log("Skip Generate generate images");
+    console.log("Skip Generate images");
     return;
   }
 
@@ -63,15 +63,15 @@ async function generateScenes(title) {
 }
 
 function splitLongTextIntoChunks(content) {
-  const chunckSize = 200;
-  const separators = ["\n", ".", ";", "?", "!"];
+  const chunckSize = 400;
+  const separators = ["\n", ".", ";", "?", "!", ","];
   const chuncks = [...content]
     .reduce(
       (mergedChunks, char) => {
         const currentChunk = mergedChunks[mergedChunks.length - 1];
         if (
           currentChunk.length > chunckSize &&
-          separators.includes(currentChunk.charAt(currentChunk.length - 1))
+          separators.includes(currentChunk.charAt(currentChunk.length - 1) + "")
         ) {
           mergedChunks.push(char + "");
         } else {
@@ -266,11 +266,11 @@ async function generateScenePrompts(title) {
     );
     fs.writeFileSync(storyJsonPath, JSON.stringify(story, null, 4));
   } else {
-    console.log("Skip Generate generate cover image prompt");
+    console.log("Skip Generate cover image prompt");
   }
 
   if (story.hasImagePrompts) {
-    console.log("Skip Generate generate image prompt");
+    console.log("Skip Generate image prompt");
     return;
   }
   const sceneDescriptions = story.contentChunks.map(
@@ -304,11 +304,14 @@ async function generateStoryExtractInfo(title) {
 }
 
 async function generateVideoResources(title) {
+  const process = await startOllama();
   await generateStoryExtractInfo(title);
   await generateCharacterLines(title);
   await generateStoryAudios(title);
   await generateTranscript(title);
   await generateScenePrompts(title);
+  process.terminate();
+
   await generateScenes(title);
 }
 
