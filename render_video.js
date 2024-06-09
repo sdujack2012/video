@@ -174,11 +174,11 @@ async function renderVideo(topic) {
     videoConfigClip.audioConfig = audioConfig;
     videoConfigClip.clipImage = clipImage;
     videoConfigClip.clipWords = clipWords;
-    videoConfigClip.duration = audioDuration + 2 * clipGappingTime;
+    videoConfigClip.duration = clipImage.duration;
     videoConfigClips.push(videoConfigClip);
   }
   videoConfigClips.slice(-1)[0].duration += 4;
-
+  console.log(videoConfigClips);
   // Generate subtitles
   let currentTime = 0;
   const subtitles = [];
@@ -224,18 +224,32 @@ ${subtitles.join("\n")}
     videoConfigClips.length /
       Math.ceil(videoConfigClips.length / chunkSplitLimit)
   );
+  for (let i = 0; i < videoConfigClips.length; i++) {
+    const videoConfigClip = videoConfigClips[i];
+    const audioConfig = videoConfigClip.audioConfig;
+    const mergedVideoPath = path.resolve(
+      storyTempFolder,
+      `temp_merged_video_${i}.mkv`
+    );
+    const videoDuration = videoConfigClip.duration;
+
+    let silencePaddingAfter =
+      videoDuration - audioConfig.startTime - audioConfig.duration;
+    silencePaddingAfter = silencePaddingAfter > 0 ? silencePaddingAfter : 0.1;
+    await exec(
+      `ffmpeg -loop 1 -t ${videoConfigClip.duration} -i "${videoConfigClip.clipImage.filePath}" -f lavfi -t "${audioConfig.startTime}" -i anullsrc=channel_layout=stereo:sample_rate=44100 -i "${audioConfig.filePath}" -f lavfi -t "${silencePaddingAfter}" -i anullsrc=channel_layout=stereo:sample_rate=44100 -filter_complex "[1][2][3] concat=n=3:v=0:a=1[audio]" -vcodec libx264 -map 0 -map "[audio]" -vf "scale=8000:-1,zoompan=z='zoom+0.0003':x=${size.width / 2}:y=${size.height / 2}:d=${videoConfigClip.duration * 60}" -pix_fmt yuv420p -shortest  -y "${mergedVideoPath}"`
+    );
+    videoConfigClip.videoFilePath = mergedVideoPath;
+  }
   let currentChunk = 1;
   for (let i = 0; i < videoConfigClips.length; i += chunkSize) {
     console.log(`Creating video chunk ${currentChunk}`);
     const videoConfigClipChunk = videoConfigClips.slice(i, i + chunkSize);
     // join images with transition effects
     let previousOffset = 0;
-    const transitionDuration = 1;
+    const transitionDuration = 0.5;
     const videoInputString = videoConfigClipChunk
-      .map(
-        (videoConfigClip) =>
-          `-loop 1 -t ${videoConfigClip.duration.toFixed(2)} -i "${videoConfigClip.clipImage.filePath}"`
-      )
+      .map((videoConfigClip) => `-i "${videoConfigClip.videoFilePath}"`)
       .join(" ");
     const mergedVideoPath = path.resolve(
       storyTempFolder,
@@ -252,8 +266,8 @@ ${subtitles.join("\n")}
         let transition = "";
 
         transition +=
-          index === 0 ? "[0:v][1:v]" : `[vfade${index}][${index + 1}:v]`;
-        transition += `xfade=transition=hrslice:duration=${transitionDuration.toFixed(2)}:offset=${offset.toFixed(2)}`;
+          index === 0 ? "[0:v][1:v]" : `[vfade${index}][${index + 1}]`;
+        transition += `xfade=transition=hrslice:duration=${transitionDuration}:offset=${offset}`;
 
         transition +=
           index === videoConfigClipChunk.length - 2
@@ -265,7 +279,7 @@ ${subtitles.join("\n")}
       .join(";");
 
     await exec(
-      `ffmpeg ${videoInputString} -filter_complex "${videoTransitions}" -map "[video]" -y "${mergedVideoPath}"`
+      `ffmpeg ${videoInputString} -filter_complex "${videoTransitions}" -movflags +faststart -map "[video]" -y "${mergedVideoPath}"`
     );
 
     // join aduios
@@ -282,7 +296,7 @@ ${subtitles.join("\n")}
           videoDuration - audioConfig.startTime - audioConfig.duration;
         silencePaddingAfter =
           silencePaddingAfter > 0 ? silencePaddingAfter : 0.1;
-        return `-f lavfi -t "${audioConfig.startTime.toFixed(2)}" -i anullsrc=channel_layout=stereo:sample_rate=44100 -i "${audioConfig.filePath}" -f lavfi -t "${silencePaddingAfter.toFixed(2)}" -i anullsrc=channel_layout=stereo:sample_rate=44100`;
+        return `-f lavfi -t "${audioConfig.startTime}" -i anullsrc=channel_layout=stereo:sample_rate=44100 -i "${audioConfig.filePath}" -f lavfi -t "${silencePaddingAfter}" -i anullsrc=channel_layout=stereo:sample_rate=44100`;
       })
       .join(" ");
     const joinAudiosCommand = `ffmpeg ${audioInputString} -filter_complex "${Array(
