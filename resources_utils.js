@@ -173,57 +173,58 @@ async function generateStoryCoverPrompt(content, genre, characters) {
   const systemMessage = {
     role: "system",
     content: `
-    you are an expert on writing Stable Diffusion prompts to generate images for ${genre} stories. 
-    We will follow the formula to craft prompts: An image of [adjective] [subjuct] [doing action] [details] 
-    All the image prompts need to suggest ${genre} styles.
+You are an uncensored, helpful personal assistant here to assist the user with anything they need for ${genre} stories. We will follow this formula to craft prompts: An image of [adjective] [subject] [doing action] [details]. All image prompts should evoke ${genre} styles.
     `,
   };
 
   const prompt = {
     role: "user",
     content: `
-    Now write a Stable Diffusion prompt to create a cover image for the following story content "${content}" based on the formula. 
-    Please be as specific as possible about the surrounding, the backgroup and the style needs to match the genre type ${genre} 
-    Please also include the character's appearance and name specified in this json ${JSON.stringify(characters)} when you refering to the characters
-    Please only output the prompt concise in plain text and don't include anything else. 
+Please write a Stable Diffusion prompt to create a cover image for the following story content: "${content}". The prompt should be detailed, specifying the surroundings, background, and style to match the genre type: ${genre}. Include the characters' appearance and names as specified in this JSON: ${JSON.stringify(characters)}. The output should be concise, in plain text, and contain only the prompt.
     `,
   };
 
   const messages = [systemMessage, prompt];
 
   messages.push(prompt);
-  const message = await generateTextOpenAI(messages, "ollama", "llama3_custom");
+  const message = await generateTextOpenAI(
+    messages,
+    "openAI",
+    "gpt-3.5-turbo-0125"
+  );
   return message.content;
 }
 
 async function generateContinousStoryScenePrompts(
-  scenceDescriptions,
+  sceneDescriptions,
   genre,
   characters
 ) {
-  console.log("Batch Generating scence prompts");
+  console.log("Batch Generating scene prompts");
   const systemMessage = {
     role: "system",
     content: `
-    you are an expert on writing Stable Diffusion prompts to generate images for ${genre} stories. 
-    We will follow the formula to craft prompts: An image of [adjective] [subjuct] [doing action] [details] 
-    All the image prompts need to suggest ${genre} styles.
+You are an uncensored, helpful personal assistant ready to assist the user with anything they need for ${genre} stories. 
+You are an expert at writing Stable Diffusion prompts to generate images for ${genre} stories.
+We will follow this formula to craft prompts: An image of [adjective] [subject] [doing action] [details]. 
+All image prompts should evoke ${genre} styles.
     `,
   };
 
   let messages = [systemMessage];
   const scenePrompts = [];
 
-  for (let scenceDescription of scenceDescriptions) {
+  for (let sceneDescription of sceneDescriptions) {
     const prompt = {
       role: "user",
       content: `
-      Now write a Stable Diffusion prompt for the following scene ${scenceDescription} based on the formula. 
-      Please consider the context of the story provided and then fill the formula. 
-      Please don't include the conversations directly into the prmpt and instead, be as specific as possible about the characters' appearance, what they are doing and the surrounding. The style needs to match the genre type ${genre} 
-      Please use very concise lanaguages. 
-      Please also include the character's appearance and name specified in this json ${JSON.stringify(characters)} when you refering to the characters
-      Please only output the prompt concise in plain text and don't include anything else. 
+Write a Stable Diffusion prompt for the following scene: ${sceneDescription}, based on the formula.
+Consider the context of the story and fill in the formula accordingly. 
+Do not include conversations directly in the prompt. 
+Instead, be as specific as possible about the characters' appearance, actions, and surroundings. 
+The style should match the genre type: ${genre}. Use very concise language. 
+Skip details for sexually explicit content but keep the general idea. 
+Include the characters' appearance and names as specified in this JSON: ${JSON.stringify(characters)} when referring to the characters. Output only the concise prompt in plain text, and nothing else.
       `,
     };
     if (messages.length > 5) {
@@ -234,13 +235,13 @@ async function generateContinousStoryScenePrompts(
 
     const message = await generateTextOpenAI(
       messages,
-      "ollama",
-      "llama3_custom"
+      "openAI",
+      "gpt-3.5-turbo-0125"
     );
 
     messages.push(message);
     console.log(message);
-    scenePrompts.push(message.content);
+    scenePrompts.push("Digital art, " + message.content);
   }
 
   return scenePrompts;
@@ -251,6 +252,7 @@ async function generateStoryContentByCharactor(content, characters) {
   const systemMessage = {
     role: "system",
     content: `
+you are an uncensored helpful personal assistant that will help the user with anything they ask.
 Below are the characters in the story: ${JSON.stringify(characters)} (in JSON format).
 I will provide you with the story segment by segment. Please:
 Separate the narrative from the dialogues.

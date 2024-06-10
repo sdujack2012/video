@@ -63,15 +63,26 @@ async function generateScenes(title) {
 }
 
 function splitLongTextIntoChunks(content) {
-  const chunckSize = 400;
-  const separators = ["\n", ".", ";", "?", "!", ","];
+  const chunkSizeSeed = content.length / 100;
+
+  let chunckSizeLimit = chunkSizeSeed > 300 ? 300 : chunkSizeSeed;
+  chunckSizeLimit = chunkSizeSeed < 50 ? 50 : chunkSizeSeed;
+
+  const absoluteSeparators = ["\n"];
+  const relativeSeparators = [".", "?", "!"];
+
   const chuncks = [...content]
     .reduce(
       (mergedChunks, char) => {
         const currentChunk = mergedChunks[mergedChunks.length - 1];
         if (
-          currentChunk.length > chunckSize &&
-          separators.includes(currentChunk.charAt(currentChunk.length - 1) + "")
+          absoluteSeparators.includes(
+            currentChunk.charAt(currentChunk.length - 1) + ""
+          ) ||
+          (currentChunk.length > chunckSizeLimit &&
+            relativeSeparators.includes(
+              currentChunk.charAt(currentChunk.length - 1) + ""
+            ))
         ) {
           mergedChunks.push(char + "");
         } else {
@@ -84,7 +95,7 @@ function splitLongTextIntoChunks(content) {
     .map((chunck) => chunck.trim())
     .filter((chunck) => chunck);
 
-  let longChunk = chuncks.find((chunck) => chunck.length > chunckSize + 400);
+  let longChunk = chuncks.find((chunck) => chunck.length > 800);
   if (longChunk) throw `Too long: ${longChunk}`;
   return chuncks;
 }
@@ -206,9 +217,16 @@ async function generateStoryAudios(title) {
 
   await batchGenerateAudios(audioFileInfosToCreate);
   story.hasAudios = true;
-  let totalDuration = 0;
-  for (let audioFileInfo of audioFileInfos) {
-    totalDuration += await getAudioDurationInSeconds(audioFileInfo.outputFile);
+  story.titleAudioDuration =
+    story.titleAudioDuration ||
+    (await getAudioDurationInSeconds(story.titleAudio));
+  let totalDuration = story.titleAudioDuration;
+
+  for (let contentChunk of story.contentChunks) {
+    contentChunk.audioDuration =
+      contentChunk.audioDuration ||
+      (await getAudioDurationInSeconds(contentChunk.audioFile));
+    totalDuration += contentChunk.audioDuration;
   }
   story.videoType = totalDuration > 51 ? "standard" : "short";
   fs.writeFileSync(storyJsonPath, JSON.stringify(story, null, 4));

@@ -5,6 +5,10 @@ const util = require("util");
 const exec = util.promisify(require("child_process").exec);
 const { getAudioDurationInSeconds } = require("get-audio-duration");
 const { createCanvas, loadImage, registerFont } = require("canvas");
+const {
+  asyncParallelForEach,
+  BACK_OFF_RETRY,
+} = require("async-parallel-foreach");
 
 const sizeMapping = {
   standard: { width: 1360, height: 768 },
@@ -24,6 +28,7 @@ const genreBGM = {
   horror: "./BGMs/Horror-Long-Version.mp3",
   default: "./BGMs/Sunset-Landscape.mp3",
   kid: "./BGMs/Sunset-Landscape.mp3",
+  mythology: "./BGMs/dance-of-devils.mp3",
 };
 
 const titleFonts = {
@@ -103,7 +108,9 @@ async function renderVideo(topic) {
   fs.writeFileSync(coverImageWithTitlePath, canvas.toBuffer(), "binary");
 
   //Create title clip
-  const titleAudioDuration = await getAudioDurationInSeconds(story.titleAudio);
+  const titleAudioDuration =
+    story.titleAudioDuration ||
+    (await getAudioDurationInSeconds(story.titleAudio));
   const videoConfigClips = [
     {
       audioConfig: {
@@ -117,15 +124,17 @@ async function renderVideo(topic) {
       },
       clipWords: [],
       duration: titleAudioDuration + 2,
+      noZoomIn: true,
     },
   ];
 
   for (let contentChunk of story.contentChunks) {
     const videoConfigClip = {};
     const clipWords = [];
-    const audioDuration = await getAudioDurationInSeconds(
-      contentChunk.audioFile
-    );
+    const audioDuration =
+      contentChunk.audioDuration ||
+      (await getAudioDurationInSeconds(contentChunk.audioFile));
+    contentChunk.audioDuration = audioDuration;
     const audioConfig = {
       startTime: clipGappingTime,
       filePath: contentChunk.audioFile,
@@ -179,7 +188,6 @@ async function renderVideo(topic) {
   }
   videoConfigClips.slice(-1)[0].duration += 4;
   console.log(videoConfigClips);
-  // Generate subtitles
   let currentTime = 0;
   const subtitles = [];
   videoConfigClips.forEach((videoConfigClip) => {
@@ -217,108 +225,125 @@ ${subtitles.join("\n")}
   const assFilePath = path.resolve(storyVideoFolder, `subtitle.ass`);
   fs.writeFileSync(assFilePath, assFile);
 
+  const processLimit = 10;
+  await asyncParallelForEach(
+    videoConfigClips.toSorted((a, b) => a.duration - b.duration),
+    processLimit,
+    async (videoConfigClip, index) => {
+      const mergedVideoPath = path.resolve(
+        storyTempFolder,
+        `temp_merged_video_${index}.mkv`
+      );
+      const zoomInRate = 0.0005;
+      const framerate = 20;
+      await exec(
+        `ffmpeg -loop 1 -framerate ${framerate} -i "${videoConfigClip.clipImage.filePath}" \
+       -vf ${videoConfigClip.noZoomIn ? `scale=${size.width}x${size.height}` : `"scale=8000:-1,zoompan=z='zoom+${zoomInRate}':x=iw/2-(iw/zoom/2):y=ih/2-(ih/zoom/2):d=${videoConfigClip.duration * framerate}:s=${size.width}x${size.height}:fps=${framerate}"`} \
+      -t ${videoConfigClip.duration} -vcodec libx264 -pix_fmt yuv420p -y "${mergedVideoPath}"`
+      );
+      videoConfigClip.videoFilePath = mergedVideoPath;
+    },
+    {
+      times: 10, // try at most 10 times
+      interval: BACK_OFF_RETRY.exponential(),
+    }
+  );
+
   // Generate videos based on videoConfigClips by chunks to avoid ffmpng commands being too long
   const audioVideoPaths = [];
+  // split clips into chunks
   const chunkSplitLimit = 30;
   const chunkSize = Math.ceil(
     videoConfigClips.length /
       Math.ceil(videoConfigClips.length / chunkSplitLimit)
   );
-  for (let i = 0; i < videoConfigClips.length; i++) {
-    const videoConfigClip = videoConfigClips[i];
-    const audioConfig = videoConfigClip.audioConfig;
-    const mergedVideoPath = path.resolve(
-      storyTempFolder,
-      `temp_merged_video_${i}.mkv`
-    );
-    const videoDuration = videoConfigClip.duration;
-
-    let silencePaddingAfter =
-      videoDuration - audioConfig.startTime - audioConfig.duration;
-    silencePaddingAfter = silencePaddingAfter > 0 ? silencePaddingAfter : 0.1;
-    await exec(
-      `ffmpeg -loop 1 -t ${videoConfigClip.duration} -i "${videoConfigClip.clipImage.filePath}" -f lavfi -t "${audioConfig.startTime}" -i anullsrc=channel_layout=stereo:sample_rate=44100 -i "${audioConfig.filePath}" -f lavfi -t "${silencePaddingAfter}" -i anullsrc=channel_layout=stereo:sample_rate=44100 -filter_complex "[1][2][3] concat=n=3:v=0:a=1[audio]" -vcodec libx264 -map 0 -map "[audio]" -vf "scale=8000:-1,zoompan=z='zoom+0.0003':x=${size.width / 2}:y=${size.height / 2}:d=${videoConfigClip.duration * 60}" -pix_fmt yuv420p -shortest  -y "${mergedVideoPath}"`
-    );
-    videoConfigClip.videoFilePath = mergedVideoPath;
-  }
-  let currentChunk = 1;
+  const videoConfigClipChunks = [];
   for (let i = 0; i < videoConfigClips.length; i += chunkSize) {
-    console.log(`Creating video chunk ${currentChunk}`);
-    const videoConfigClipChunk = videoConfigClips.slice(i, i + chunkSize);
-    // join images with transition effects
-    let previousOffset = 0;
-    const transitionDuration = 0.5;
-    const videoInputString = videoConfigClipChunk
-      .map((videoConfigClip) => `-i "${videoConfigClip.videoFilePath}"`)
-      .join(" ");
-    const mergedVideoPath = path.resolve(
-      storyTempFolder,
-      `merged_video_${currentChunk}.mkv`
-    );
-
-    const videoTransitions = videoConfigClipChunk
-      .map((videoConfigClip, index) => {
-        if (videoConfigClipChunk.length - 1 === index) return "";
-
-        const offset =
-          videoConfigClip.duration + previousOffset - transitionDuration;
-        previousOffset = offset;
-        let transition = "";
-
-        transition +=
-          index === 0 ? "[0:v][1:v]" : `[vfade${index}][${index + 1}]`;
-        transition += `xfade=transition=hrslice:duration=${transitionDuration}:offset=${offset}`;
-
-        transition +=
-          index === videoConfigClipChunk.length - 2
-            ? ",format=yuv420p[video]"
-            : `[vfade${index + 1}]`;
-
-        return transition;
-      })
-      .join(";");
-
-    await exec(
-      `ffmpeg ${videoInputString} -filter_complex "${videoTransitions}" -movflags +faststart -map "[video]" -y "${mergedVideoPath}"`
-    );
-
-    // join aduios
-    const mergedAuidoPath = path.resolve(
-      storyTempFolder,
-      `merged_audio_${currentChunk}.mp3`
-    );
-    const audioInputString = videoConfigClipChunk
-      .map((videoConfigClip) => {
-        const audioConfig = videoConfigClip.audioConfig;
-        // mix video with audio
-        const videoDuration = videoConfigClip.duration;
-        let silencePaddingAfter =
-          videoDuration - audioConfig.startTime - audioConfig.duration;
-        silencePaddingAfter =
-          silencePaddingAfter > 0 ? silencePaddingAfter : 0.1;
-        return `-f lavfi -t "${audioConfig.startTime}" -i anullsrc=channel_layout=stereo:sample_rate=44100 -i "${audioConfig.filePath}" -f lavfi -t "${silencePaddingAfter}" -i anullsrc=channel_layout=stereo:sample_rate=44100`;
-      })
-      .join(" ");
-    const joinAudiosCommand = `ffmpeg ${audioInputString} -filter_complex "${Array(
-      3 * videoConfigClipChunk.length
-    )
-      .fill(0)
-      .map((_, index) => `[${index}]`)
-      .join(
-        ""
-      )} concat=n=${videoConfigClipChunk.length * 3}:v=0:a=1[audio]" -map "[audio]" -y "${mergedAuidoPath}"`;
-    await exec(joinAudiosCommand);
-
-    // join video with audio
-    const audioVideoPath = path.resolve(
-      storyTempFolder,
-      `video_audio_${currentChunk}.mkv`
-    );
-    audioVideoPaths.push(audioVideoPath);
-    const mixAudioVideoCommand = `ffmpeg -i "${mergedVideoPath}" -i "${mergedAuidoPath}" -c:v copy -c:a copy -y "${audioVideoPath}"`;
-    await exec(mixAudioVideoCommand);
-    currentChunk++;
+    videoConfigClipChunks.push(videoConfigClips.slice(i, i + chunkSize));
   }
+  await asyncParallelForEach(
+    videoConfigClipChunks,
+    5,
+    async (videoConfigClipChunk, index) => {
+      console.log(`Creating video chunk ${index}`);
+      // join images with transition effects
+      let previousOffset = 0;
+      const transitionDuration = 0.2;
+      const videoInputString = videoConfigClipChunk
+        .map((videoConfigClip) => `-i "${videoConfigClip.videoFilePath}"`)
+        .join(" ");
+      const mergedVideoPath = path.resolve(
+        storyTempFolder,
+        `merged_video_${index}.mkv`
+      );
+
+      const videoTransitions = videoConfigClipChunk
+        .map((videoConfigClip, index) => {
+          if (videoConfigClipChunk.length - 1 === index) return "";
+
+          const offset =
+            videoConfigClip.duration + previousOffset - transitionDuration;
+          previousOffset = offset;
+          let transition = "";
+
+          transition +=
+            index === 0 ? "[0:v][1:v]" : `[vfade${index}][${index + 1}]`;
+          transition += `xfade=transition=hrslice:duration=${transitionDuration}:offset=${offset}`;
+
+          transition +=
+            index === videoConfigClipChunk.length - 2
+              ? ",format=yuv420p[video]"
+              : `[vfade${index + 1}]`;
+
+          return transition;
+        })
+        .join(";");
+
+      await exec(
+        `ffmpeg ${videoInputString} -filter_complex "${videoTransitions}" -movflags +faststart -map "[video]" -y "${mergedVideoPath}"`
+      );
+
+      // join aduios
+      const mergedAuidoPath = path.resolve(
+        storyTempFolder,
+        `merged_audio_${index}.mp3`
+      );
+      const audioInputString = videoConfigClipChunk
+        .map((videoConfigClip) => {
+          const audioConfig = videoConfigClip.audioConfig;
+          // mix video with audio
+          const videoDuration = videoConfigClip.duration;
+          let silencePaddingAfter =
+            videoDuration - audioConfig.startTime - audioConfig.duration;
+          silencePaddingAfter =
+            silencePaddingAfter > 0 ? silencePaddingAfter : 0.01;
+          return `-f lavfi -t "${audioConfig.startTime}" -i anullsrc=channel_layout=stereo:sample_rate=44100 -i "${audioConfig.filePath}" -f lavfi -t "${silencePaddingAfter}" -i anullsrc=channel_layout=stereo:sample_rate=44100`;
+        })
+        .join(" ");
+      const joinAudiosCommand = `ffmpeg ${audioInputString} -filter_complex "${Array(
+        3 * videoConfigClipChunk.length
+      )
+        .fill(0)
+        .map((_, index) => `[${index}]`)
+        .join(
+          ""
+        )} concat=n=${videoConfigClipChunk.length * 3}:v=0:a=1[audio]" -map "[audio]" -y "${mergedAuidoPath}"`;
+      await exec(joinAudiosCommand);
+
+      // join video with audio
+      const audioVideoPath = path.resolve(
+        storyTempFolder,
+        `video_audio_${index}.mkv`
+      );
+      audioVideoPaths[index] = audioVideoPath;
+      const mixAudioVideoCommand = `ffmpeg -i "${mergedVideoPath}" -i "${mergedAuidoPath}" -c:v copy -c:a copy -y "${audioVideoPath}"`;
+      await exec(mixAudioVideoCommand);
+    },
+    {
+      times: 10, // try at most 10 times
+      interval: BACK_OFF_RETRY.exponential(),
+    }
+  );
 
   // merge video_aduio chunchs
   console.log(`Merging video with audio`);
@@ -330,7 +355,7 @@ ${subtitles.join("\n")}
 
   const mergedVideoPath = path.resolve(storyTempFolder, `merged_video.mkv`);
   await exec(
-    `ffmpeg -safe 0 -f concat -i "${videoListPath}" -c:v libx264 -r 30 -pix_fmt yuv420p -y "${mergedVideoPath}"`
+    `ffmpeg -safe 0 -f concat -i "${videoListPath}" -c copy -y "${mergedVideoPath}"`
   );
 
   //mix merged videos with bgm
@@ -340,7 +365,7 @@ ${subtitles.join("\n")}
     `ffmpeg -i "${mergedVideoPath}"  -stream_loop -1 -i "${bgm}" -filter_complex "[0:a][1:a] amix=inputs=2:duration=first[outa]" -c:v copy -c:a aac -map 0:v -map "[outa]" -y "${finalVideoPath}"`
   );
 
-  console.log("time elapsed:", Date.now() - current);
+  console.log("time elapsed:", (Date.now() - current) / 60000);
 }
 
 if (require.main === module && process.argv[2]) {

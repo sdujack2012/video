@@ -505,6 +505,16 @@ ast-types@^0.13.4:
   dependencies:
     tslib "^2.0.1"
 
+async-parallel-foreach@^1.0.1:
+  version "1.0.1"
+  resolved "https://registry.yarnpkg.com/async-parallel-foreach/-/async-parallel-foreach-1.0.1.tgz#6e93aa8168b937a03217d55fff638553f2e990ca"
+  integrity sha512-YGwWwb/c8t2Galt4xxUpy94ja4vr3FVcVgrkkTFEMVHUTdEED4Joofq/Q7p/TExX6cjOeYgXRd9kiaN0DdPobQ==
+
+async@^3.2.5:
+  version "3.2.5"
+  resolved "https://registry.yarnpkg.com/async/-/async-3.2.5.tgz#ebd52a8fdaf7a2289a24df399f8d8485c8a46b66"
+  integrity sha512-baNZyqaaLhyLVKm/DlvdW051MSgO6b8eVfIezl9E5PqWxFgzLm/wQntEW4zOytVburDEr0JlALEpdOFwvErLsg==
+
 asynckit@^0.4.0:
   version "0.4.0"
   resolved "https://registry.yarnpkg.com/asynckit/-/asynckit-0.4.0.tgz#c79ed97f7f34cb8f2ba1bc9790bcc366474b4b79"
