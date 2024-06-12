@@ -4,7 +4,7 @@ import sys, json
 if sys.argv[1] is None or sys.argv[2] is None:
     sys.exit(0)
 
-with open(sys.argv[1], "r") as file:
+with open(sys.argv[1], "r", encoding="utf8") as file:
     audioFiles = json.load(file)
     model = whisper.load_model("small", download_root="F:/cache/whisper")
     transcriptions = []

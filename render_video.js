@@ -28,7 +28,7 @@ const genreBGM = {
   horror: "./BGMs/Horror-Long-Version.mp3",
   default: "./BGMs/Sunset-Landscape.mp3",
   kid: "./BGMs/Sunset-Landscape.mp3",
-  mythology: "./BGMs/dance-of-devils.mp3",
+  mythology: "./BGMs/inspiring-cinematic-ambient.mp3",
 };
 
 const titleFonts = {
@@ -62,7 +62,11 @@ async function renderVideo(topic) {
   const storyTempFolder = createFolderIfNotExist(storyVideoFolder, "temp");
 
   const storyJsonPath = path.resolve(storyFolder, "story.json");
-  const story = JSON.parse(fs.readFileSync(storyJsonPath, "utf8"));
+  let story = JSON.parse(fs.readFileSync(storyJsonPath, "utf8"));
+  if (story.videoFilePath && fs.existsSync(story.videoFilePath)) {
+    console.log("Skip rendering video");
+    return;
+  }
   const lineYStart = lineYStartMappings[story.videoType];
 
   const subtitleFontSize = subtitleFontSizes[story.videoType];
@@ -97,10 +101,32 @@ async function renderVideo(topic) {
   const coverImage = await loadImage(coverImagePath);
 
   ctx.drawImage(coverImage, 0, 0, canvas.width, canvas.height);
-  ctx.font = '60px "Title font"';
+  ctx.font = `60px "Title font"`;
   ctx.fillStyle = titleFontColor;
   const titleWidth = ctx.measureText(story.title).width;
-  ctx.fillText(story.title, canvas.width / 2 - titleWidth / 2, 150);
+  const titleSegments = [];
+
+  if (titleWidth > canvas.width) {
+    const titleparts = story.title.split(" ");
+    const chunkSize = titleparts.length / Math.ceil(titleWidth / canvas.width);
+    for (let i = 0; i < titleparts.length; i += chunkSize) {
+      titleSegments.push(titleparts.slice(i, i + chunkSize).join(" "));
+    }
+  } else {
+    titleSegments.push(story.title);
+  }
+  let currentY = 0;
+  for (let titleSegment of titleSegments) {
+    const title = titleSegment;
+    const titleWidth = ctx.measureText(title).width;
+    ctx.fillText(
+      title,
+      canvas.width / 2 - titleWidth / 2,
+      (story.videoType === "short" ? canvas.height / 2 : 150) + currentY
+    );
+    currentY += 60;
+  }
+
   const coverImageWithTitlePath = path.resolve(
     storyTempFolder,
     `cover_image_with_title.png`
@@ -187,7 +213,6 @@ async function renderVideo(topic) {
     videoConfigClips.push(videoConfigClip);
   }
   videoConfigClips.slice(-1)[0].duration += 4;
-  console.log(videoConfigClips);
   let currentTime = 0;
   const subtitles = [];
   videoConfigClips.forEach((videoConfigClip) => {
@@ -238,7 +263,7 @@ ${subtitles.join("\n")}
       const framerate = 20;
       await exec(
         `ffmpeg -loop 1 -framerate ${framerate} -i "${videoConfigClip.clipImage.filePath}" \
-       -vf ${videoConfigClip.noZoomIn ? `scale=${size.width}x${size.height}` : `"scale=8000:-1,zoompan=z='zoom+${zoomInRate}':x=iw/2-(iw/zoom/2):y=ih/2-(ih/zoom/2):d=${videoConfigClip.duration * framerate}:s=${size.width}x${size.height}:fps=${framerate}"`} \
+       -vf ${videoConfigClip.noZoomIn ? `scale=${size.width}x${size.height}` : `"scale=8000:-1,zoompan=z='min(1.50,zoom+${zoomInRate})':x=iw/2-(iw/zoom/2):y=ih/2-(ih/zoom/2):d=${videoConfigClip.duration * framerate}:s=${size.width}x${size.height}:fps=${framerate}"`} \
       -t ${videoConfigClip.duration} -vcodec libx264 -pix_fmt yuv420p -y "${mergedVideoPath}"`
       );
       videoConfigClip.videoFilePath = mergedVideoPath;
@@ -364,6 +389,10 @@ ${subtitles.join("\n")}
   await exec(
     `ffmpeg -i "${mergedVideoPath}"  -stream_loop -1 -i "${bgm}" -filter_complex "[0:a][1:a] amix=inputs=2:duration=first[outa]" -c:v copy -c:a aac -map 0:v -map "[outa]" -y "${finalVideoPath}"`
   );
+
+  story = JSON.parse(fs.readFileSync(storyJsonPath, "utf8"));
+  story.videoFilePath = finalVideoPath;
+  fs.writeFileSync(storyJsonPath, JSON.stringify(story, null, 4));
 
   console.log("time elapsed:", (Date.now() - current) / 60000);
 }

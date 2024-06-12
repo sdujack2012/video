@@ -1,6 +1,6 @@
 const fs = require("fs");
 const path = require("path");
-const { createFolderIfNotExist, startOllama } = require("./utils");
+const { createFolderIfNotExist } = require("./utils");
 const {
   batchGenerateImagesByPrompts,
   batchGenerateAudios,
@@ -11,6 +11,8 @@ const {
   generateStoryCoverPrompt,
 } = require("./resources_utils");
 const { getAudioDurationInSeconds } = require("get-audio-duration");
+const { encoding_for_model } = require("@dqbd/tiktoken");
+const { exec } = require("child_process");
 
 async function generateScenes(title) {
   const storyFolder = createFolderIfNotExist("short_story", title);
@@ -65,75 +67,49 @@ async function generateScenes(title) {
 function splitLongTextIntoChunks(content) {
   const chunkSizeSeed = content.length / 100;
 
-  let chunckSizeLimit = chunkSizeSeed > 300 ? 300 : chunkSizeSeed;
+  let chunckSizeLimit = chunkSizeSeed > 200 ? 200 : chunkSizeSeed;
   chunckSizeLimit = chunkSizeSeed < 50 ? 50 : chunkSizeSeed;
 
-  const absoluteSeparators = ["\n"];
-  const relativeSeparators = [".", "?", "!"];
+  const relativeSeparators = [".", "?", "!", ";"];
 
-  const chuncks = [...content]
-    .reduce(
-      (mergedChunks, char) => {
-        const currentChunk = mergedChunks[mergedChunks.length - 1];
-        if (
-          absoluteSeparators.includes(
-            currentChunk.charAt(currentChunk.length - 1) + ""
-          ) ||
-          (currentChunk.length > chunckSizeLimit &&
+  const chuncks = content
+    .split("\n")
+    .map((contentChunk) =>
+      [...contentChunk].reduce(
+        (mergedChunks, char) => {
+          const currentChunk = mergedChunks[mergedChunks.length - 1];
+          if (
+            currentChunk.length > chunckSizeLimit &&
             relativeSeparators.includes(
               currentChunk.charAt(currentChunk.length - 1) + ""
-            ))
-        ) {
-          mergedChunks.push(char + "");
-        } else {
-          mergedChunks[mergedChunks.length - 1] = currentChunk + char;
-        }
-        return mergedChunks;
-      },
-      [""]
+            )
+          ) {
+            mergedChunks.push(char + "");
+          } else {
+            mergedChunks[mergedChunks.length - 1] = currentChunk + char;
+          }
+          return mergedChunks;
+        },
+        [""]
+      )
     )
-    .map((chunck) => chunck.trim())
-    .filter((chunck) => chunck);
+    .flatMap((contentChunks) => contentChunks)
+    .map((contentChunk) => contentChunk.trim())
+    .filter((contentChunk) => contentChunk.length > 2);
+  const encoder = encoding_for_model("gpt-3.5-turbo");
 
-  let longChunk = chuncks.find((chunck) => chunck.length > 800);
+  let longChunk = chuncks.find((chunck) => {
+    const tokens = encoder.encode(chunck);
+    return tokens.length > 300;
+  });
+  encoder.free();
+
   if (longChunk) throw `Too long: ${longChunk}`;
   return chuncks;
 }
 
-async function generateStoryAudios(title) {
-  const storyFolder = createFolderIfNotExist("short_story", title);
-  const storyJsonPath = path.resolve(storyFolder, "story.json");
-  const storyAudioFolder = createFolderIfNotExist(storyFolder, "aduios");
-
-  const story = JSON.parse(fs.readFileSync(storyJsonPath, "utf8"));
+function assignVoicesForCharacters(characters) {
   const narratorVoiceFile = "./speakers/matt.mp3";
-
-  const audioFileInfos = [];
-  story.titleAudio = path.resolve(storyAudioFolder, `titleAudio.mp3`);
-  audioFileInfos.push({
-    text: story.title,
-    outputFile: story.titleAudio,
-    speakerVoiceFile: narratorVoiceFile,
-  });
-
-  story.contentChunks = story.contentChunks
-    .reduce((splitedChuncks, contentChunk) => {
-      const currentSplitChunks = splitLongTextIntoChunks(contentChunk.content);
-      splitedChuncks.push(
-        ...currentSplitChunks.map((content) => ({
-          ...contentChunk,
-          content,
-        }))
-      );
-      return splitedChuncks;
-    }, [])
-    .map((contentChunk, index) => ({
-      ...contentChunk,
-      audioFile: path.resolve(storyAudioFolder, `chunk ${index + 1}.mp3`),
-    }));
-
-  story.hasContentChuncks = true;
-  fs.writeFileSync(storyJsonPath, JSON.stringify(story, null, 4));
 
   const characterVoiceFileMappings = {};
 
@@ -174,17 +150,18 @@ async function generateStoryAudios(title) {
     "./speakers/woman 10.mp3",
   ];
 
-  const femaleCharacters = story.characters.filter(
+  const femaleCharacters = characters.filter(
     (character) => character.gender?.toLocaleLowerCase() === "female"
   );
   if (femaleCharacters.length > femaleVoiceFiles.length) {
     throw "More female voice files needed";
   }
+
   femaleCharacters.forEach((character, index) => {
     characterVoiceFileMappings[character.name] = femaleVoiceFiles[index];
   });
 
-  const maleCharacters = story.characters.filter(
+  const maleCharacters = characters.filter(
     (character) => character.gender?.toLocaleLowerCase() !== "female"
   );
   if (maleCharacters.length > maleVoiceFiles.length) {
@@ -194,8 +171,33 @@ async function generateStoryAudios(title) {
     characterVoiceFileMappings[character.name] = maleVoiceFiles[index];
   });
 
-  console.log(story);
-  fs.writeFileSync(storyJsonPath, JSON.stringify(story, null, 4));
+  return characterVoiceFileMappings;
+}
+
+async function generateStoryAudios(title) {
+  const storyFolder = createFolderIfNotExist("short_story", title);
+  const storyJsonPath = path.resolve(storyFolder, "story.json");
+  const storyAudioFolder = createFolderIfNotExist(storyFolder, "aduios");
+
+  const story = JSON.parse(fs.readFileSync(storyJsonPath, "utf8"));
+  const narratorVoiceFile = "./speakers/matt.mp3";
+
+  const audioFileInfos = [];
+  story.titleAudio = path.resolve(storyAudioFolder, `titleAudio.mp3`);
+  audioFileInfos.push({
+    text: story.title,
+    outputFile: story.titleAudio,
+    speakerVoiceFile: narratorVoiceFile,
+  });
+
+  const characterVoiceFileMappings = story.enableRoles
+    ? assignVoicesForCharacters(story.characters)
+    : {}; // awalys use narratorVoiceFile
+
+  story.contentChunks = story.contentChunks.map((contentChunk, index) => ({
+    ...contentChunk,
+    audioFile: path.resolve(storyAudioFolder, `chunk ${index + 1}.mp3`),
+  }));
 
   audioFileInfos.push(
     ...story.contentChunks.map((contentChunk) => ({
@@ -203,9 +205,10 @@ async function generateStoryAudios(title) {
       outputFile: contentChunk.audioFile,
       speakerVoiceFile: characterVoiceFileMappings[contentChunk.character]
         ? characterVoiceFileMappings[contentChunk.character]
-        : characterVoiceFileMappings["Narrator"],
+        : narratorVoiceFile,
     }))
   );
+
   const audioFileInfosToCreate = audioFileInfos.filter(
     (audioFileInfo) => !fs.existsSync(audioFileInfo.outputFile)
   );
@@ -228,26 +231,41 @@ async function generateStoryAudios(title) {
       (await getAudioDurationInSeconds(contentChunk.audioFile));
     totalDuration += contentChunk.audioDuration;
   }
-  story.videoType = totalDuration > 51 ? "standard" : "short";
+  story.videoType = totalDuration > 54 ? "standard" : "short";
   fs.writeFileSync(storyJsonPath, JSON.stringify(story, null, 4));
 }
 
-async function generateCharacterLines(title) {
+async function splitStoryIntoChunks(title) {
   const storyFolder = createFolderIfNotExist("short_story", title);
   const storyJsonPath = path.resolve(storyFolder, "story.json");
   const story = JSON.parse(fs.readFileSync(storyJsonPath, "utf8"));
 
-  if (story.hasContentChuncks) {
-    console.log("Skip generating character lines");
+  if (story.contentChunks) {
+    console.log("Skip generating content chuncks");
     return;
   }
 
-  story.contentChunks = await generateStoryContentByCharactor(
-    story.content,
-    story.characters
-  );
+  if (story.enableRoles) {
+    story.characters = await extractCharactersFromStory(story.content);
+    story.contentChunks = await generateStoryContentByCharactor(
+      story.content,
+      story.characters
+    );
 
-  story.hasContentChuncks = true;
+    story.contentChunks = story.contentChunks.flatMap((contentChunk) => {
+      const currentSplitChunks = splitLongTextIntoChunks(contentChunk.content);
+
+      return currentSplitChunks.map((content) => ({
+        ...contentChunk,
+        content,
+      }));
+    });
+  } else {
+    story.contentChunks = splitLongTextIntoChunks(story.content).map(
+      (content) => ({ content })
+    );
+  }
+
   fs.writeFileSync(storyJsonPath, JSON.stringify(story, null, 4));
 }
 
@@ -277,11 +295,13 @@ async function generateScenePrompts(title) {
   const storyJsonPath = path.resolve(storyFolder, "story.json");
   const story = JSON.parse(fs.readFileSync(storyJsonPath, "utf8"));
   if (!story.coverImagePrompt) {
-    story.coverImagePrompt = await generateStoryCoverPrompt(
-      story.contentChunks[0].content,
-      story.genre,
-      story.characters
-    );
+    story.coverImagePrompt = (
+      await generateContinousStoryScenePrompts(
+        [story.contentChunks[0].content],
+        story.genre,
+        story.characters
+      )
+    )[0];
     fs.writeFileSync(storyJsonPath, JSON.stringify(story, null, 4));
   } else {
     console.log("Skip Generate cover image prompt");
@@ -308,38 +328,23 @@ async function generateScenePrompts(title) {
   story.hasImagePrompts = true;
   fs.writeFileSync(storyJsonPath, JSON.stringify(story, null, 4));
 }
-async function generateStoryExtractInfo(title) {
-  const storyFolder = createFolderIfNotExist("short_story", title);
-  const storyJsonPath = path.resolve(storyFolder, "story.json");
-  const story = JSON.parse(fs.readFileSync(storyJsonPath, "utf8"));
-  if (story.hasCharacters) {
-    console.log("Skip extracting characters");
-    return;
-  }
-  story.characters = await extractCharactersFromStory(story.content);
-  story.hasCharacters = true;
-  fs.writeFileSync(storyJsonPath, JSON.stringify(story, null, 4));
-}
-
 async function generateVideoResources(title) {
-  const process = await startOllama();
-  await generateStoryExtractInfo(title);
-  await generateCharacterLines(title);
+  await splitStoryIntoChunks(title);
   await generateStoryAudios(title);
   await generateTranscript(title);
   await generateScenePrompts(title);
-  process.terminate();
-
+  exec(
+    `curl http://localhost:11434/api/generate -d '{"model": "llama3", "keep_alive": 0}'`
+  );
   await generateScenes(title);
 }
 
 exports.generateVideoResources = generateVideoResources;
-exports.generateStoryExtractInfo = generateStoryExtractInfo;
 exports.generateStoryAudios = generateStoryAudios;
 exports.generateTranscript = generateTranscript;
 exports.generateScenePrompts = generateScenePrompts;
 exports.generateScenes = generateScenes;
-exports.generateCharacterLines = generateCharacterLines;
+exports.splitStoryIntoChunks = splitStoryIntoChunks;
 
 if (require.main === module && process.argv[2]) {
   generateVideoResources(process.argv[2]);

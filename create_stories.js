@@ -7,7 +7,7 @@ const {
   generateStoryAudios,
   generateTranscript,
   generateScenePrompts,
-  generateCharacterLines,
+  splitStoryIntoChunks,
   generateScenes,
 } = require("./generate_story_resources");
 const { renderVideo } = require("./render_video");
@@ -24,7 +24,7 @@ async function createShortStories() {
     }
     await generateVideoResources(story.title);
     // await generateStoryExtractInfo(story.title);
-    // await generateCharacterLines(story.title);
+    // await splitStoryIntoChunks(story.title);
     // await generateStoryAudios(story.title);
     // await generateTranscript(story.title);
     // await generateScenePrompts(story.title);
