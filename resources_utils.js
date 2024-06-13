@@ -3,7 +3,7 @@ const path = require("path");
 const axios = require("axios");
 const OpenAI = require("openai");
 const { executeExternalHelper } = require("./utils");
-
+const { ComfyUIClient } = require("comfy-ui-client");
 async function generateTextOpenAI(messages, provider, model) {
   const apiKeys = JSON.parse(fs.readFileSync("./apikey.json", "utf8"));
   const baseURLs = {
@@ -32,9 +32,21 @@ async function generateTextOpenAI(messages, provider, model) {
   return res.choices[0].message;
 }
 
+async function freeVRams() {
+  await axios.post(
+    "http://localhost:11434/api/generate",
+    '{"model": "llama3", "keep_alive": 0}',
+    {
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+    }
+  );
+}
+
 async function generateImage(prompt, width, height) {
   const response = await axios.get(
-    `http://localhost:8080/text2image`,
+    `http://127.0.0.1:8188/text2image`,
     {
       params: {
         prompt,
@@ -51,6 +63,38 @@ async function generateImage(prompt, width, height) {
     }
   );
   return response.data.data;
+}
+
+async function batchGenerateImagesComfyUI(imagePromptDetails) {
+  const serverAddress = "127.0.0.1:8188";
+  const clientId = "baadbabe";
+  const client = new ComfyUIClient(serverAddress, clientId);
+  console.log(client);
+  // Connect to server
+  await client.connect();
+  // Generate images
+  console.log(client);
+
+  for (let imagePromptDetail of imagePromptDetails) {
+    const workflow = JSON.parse(
+      fs.readFileSync(
+        "E:/story video/comfyUI workflows/sdxl_lightning_workflow_full.json"
+      )
+    );
+    workflow["3"]["inputs"]["seed"] = Math.floor(Math.random() * 4294967294);
+    workflow["6"]["inputs"]["text"] = imagePromptDetail.prompt;
+    workflow["5"]["inputs"]["width"] = imagePromptDetail.width;
+    workflow["5"]["inputs"]["height"] = imagePromptDetail.height;
+
+    const images = await client.getImages(workflow);
+    const blob = Object.values(images)[0][0].blob;
+
+    fs.writeFileSync(
+      imagePromptDetail.outputFile,
+      Buffer.from(await blob.arrayBuffer())
+    );
+  }
+  await client.disconnect();
 }
 
 async function generateAudio(text, speakerVoiceFile) {
@@ -114,12 +158,8 @@ async function generateText(messages) {
 
 async function batchGenerateImagesByPrompts(imagePromptDetails) {
   console.log("Batch generating images");
-  await executeExternalHelper("python generate_image.py", imagePromptDetails);
-  // for(let imagePromptDetail of imagePromptDetails) {
-  //   const imageBase64 = await generateImage(imagePromptDetail.prompt);
-  //   const buff = Buffer.from(imageBase64, 'base64');
-  //   fs.writeFileSync(imagePromptDetail.outputFile, buff);
-  // }
+  // await executeExternalHelper("python generate_image.py", imagePromptDetails);
+  await batchGenerateImagesComfyUI(imagePromptDetails);
 }
 
 async function batchGenerateAudios(audioDetails) {
@@ -187,11 +227,7 @@ Please write a Stable Diffusion prompt to create a cover image for the following
   const messages = [systemMessage, prompt];
 
   messages.push(prompt);
-  const message = await generateTextOpenAI(
-    messages,
-    "openAI",
-    "gpt-3.5-turbo-0125"
-  );
+  const message = await generateTextOpenAI(messages, "ollama", "llama3");
   return message.content;
 }
 
@@ -233,11 +269,7 @@ Include the characters' appearance and names as specified in this JSON: ${JSON.s
     messages.push(prompt);
     // const message = await generateText(messages);
 
-    const message = await generateTextOpenAI(
-      messages,
-      "openAI",
-      "gpt-3.5-turbo-0125"
-    );
+    const message = await generateTextOpenAI(messages, "ollama", "llama3");
 
     messages.push(message);
     console.log(message);
@@ -404,3 +436,4 @@ exports.generateContinousStoryScenePrompts = generateContinousStoryScenePrompts;
 exports.generateStoryContentByCharactor = generateStoryContentByCharactor;
 exports.extractCharactersFromStory = extractCharactersFromStory;
 exports.generateStoryCoverPrompt = generateStoryCoverPrompt;
+exports.freeVRams = freeVRams;

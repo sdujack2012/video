@@ -8,11 +8,10 @@ const {
   generateContinousStoryScenePrompts,
   generateStoryContentByCharactor,
   extractCharactersFromStory,
-  generateStoryCoverPrompt,
+  freeVRams,
 } = require("./resources_utils");
 const { getAudioDurationInSeconds } = require("get-audio-duration");
 const { encoding_for_model } = require("@dqbd/tiktoken");
-const { exec } = require("child_process");
 
 async function generateScenes(title) {
   const storyFolder = createFolderIfNotExist("short_story", title);
@@ -333,9 +332,7 @@ async function generateVideoResources(title) {
   await generateStoryAudios(title);
   await generateTranscript(title);
   await generateScenePrompts(title);
-  exec(
-    `curl http://localhost:11434/api/generate -d '{"model": "llama3", "keep_alive": 0}'`
-  );
+  await freeVRams();
   await generateScenes(title);
 }
 

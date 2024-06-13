@@ -16,6 +16,7 @@
     "async-parallel-foreach": "^1.0.1",
     "axios": "^1.6.8",
     "canvas": "^2.11.2",
+    "comfy-ui-client": "^0.1.2",
     "download": "^8.0.0",
     "editly": "^0.14.2",
     "eslint": "^9.4.0",
