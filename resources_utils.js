@@ -69,11 +69,9 @@ async function batchGenerateImagesComfyUI(imagePromptDetails) {
   const serverAddress = "127.0.0.1:8188";
   const clientId = "baadbabe";
   const client = new ComfyUIClient(serverAddress, clientId);
-  console.log(client);
   // Connect to server
   await client.connect();
   // Generate images
-  console.log(client);
 
   for (let imagePromptDetail of imagePromptDetails) {
     const workflow = JSON.parse(
@@ -249,31 +247,27 @@ All image prompts should evoke ${genre} styles.
 
   let messages = [systemMessage];
   const scenePrompts = [];
-
   for (let sceneDescription of sceneDescriptions) {
     const prompt = {
       role: "user",
       content: `
 Write a Stable Diffusion prompt for the following scene: ${sceneDescription}, based on the formula.
-Consider the context of the story and fill in the formula accordingly. 
-Do not include conversations directly in the prompt. 
-Instead, be as specific as possible about the characters' appearance, actions, and surroundings. 
-The style should match the genre type: ${genre}. Use very concise language. 
-Skip details for sexually explicit content but keep the general idea. 
-Include the characters' appearance and names as specified in this JSON: ${JSON.stringify(characters)} when referring to the characters. Output only the concise prompt in plain text, and nothing else.
-      `,
+Consider the context of the story and fill in the formula accordingly.
+The style should match the genre type: ${genre}.  Only capture the essence of the scene using very concise language. 
+${characters ? `Include the characters' appearance and names as specified in this JSON: ${JSON.stringify(characters)} when referring to the characters. Output only the concise prompt in plain text, and nothing else.` : ""}
+`,
     };
-    if (messages.length > 5) {
-      messages = [systemMessage];
+    if (messages.length > 10) {
+      messages = [
+        systemMessage,
+        ...messages.slice(Math.max(messages.length - 5, 0)),
+      ];
     }
     messages.push(prompt);
-    // const message = await generateText(messages);
 
     const message = await generateTextOpenAI(messages, "ollama", "llama3");
-
+    scenePrompts.push(message.content);
     messages.push(message);
-    console.log(message);
-    scenePrompts.push("Digital art, " + message.content);
   }
 
   return scenePrompts;

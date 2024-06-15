@@ -64,47 +64,56 @@ async function generateScenes(title) {
 }
 
 function splitLongTextIntoChunks(content) {
-  const chunkSizeSeed = content.length / 100;
+  const tokenLimit = 20;
+  const maxToken = 100;
 
-  let chunckSizeLimit = chunkSizeSeed > 200 ? 200 : chunkSizeSeed;
-  chunckSizeLimit = chunkSizeSeed < 50 ? 50 : chunkSizeSeed;
+  const relativeSeparators = ["\n", ".", "?", "!", ";"];
 
-  const relativeSeparators = [".", "?", "!", ";"];
+  const splitContentIntoChunks = (contentToSplit, separator) => {
+    if (contentToSplit.split(" ").length <= tokenLimit) {
+      return [contentToSplit];
+    }
 
-  const chuncks = content
-    .split("\n")
-    .map((contentChunk) =>
-      [...contentChunk].reduce(
-        (mergedChunks, char) => {
-          const currentChunk = mergedChunks[mergedChunks.length - 1];
-          if (
-            currentChunk.length > chunckSizeLimit &&
-            relativeSeparators.includes(
-              currentChunk.charAt(currentChunk.length - 1) + ""
-            )
-          ) {
-            mergedChunks.push(char + "");
-          } else {
-            mergedChunks[mergedChunks.length - 1] = currentChunk + char;
-          }
-          return mergedChunks;
-        },
-        [""]
+    return contentToSplit
+      .split(separator)
+      .filter((contentChunk) => contentChunk.trim());
+  };
+
+  const mergeContentChunks = (chunksToMerge, separator) => {
+    const chunks = [chunksToMerge[0]];
+    const restchunksToMerge =
+      chunksToMerge.length > 1 ? chunksToMerge.slice(1) : [];
+    for (let index = 0; index < restchunksToMerge.length; index++) {
+      const currentChunk = chunks[chunks.length - 1];
+      const chunkToMerge = restchunksToMerge[index];
+      if (
+        currentChunk.split(" ").length + chunkToMerge.split(" ").length >
+        tokenLimit
+      ) {
+        chunks[chunks.length - 1] += separator;
+        chunks.push(chunkToMerge);
+      } else {
+        chunks[chunks.length - 1] += separator + chunkToMerge;
+      }
+    }
+    return chunks;
+  };
+
+  let chunks = [content];
+  relativeSeparators.forEach((separator) => {
+    chunks = chunks
+      .map((chunk) =>
+        mergeContentChunks(splitContentIntoChunks(chunk, separator), separator)
       )
-    )
-    .flatMap((contentChunks) => contentChunks)
-    .map((contentChunk) => contentChunk.trim())
-    .filter((contentChunk) => contentChunk.length > 2);
-  const encoder = encoding_for_model("gpt-3.5-turbo");
-
-  let longChunk = chuncks.find((chunck) => {
-    const tokens = encoder.encode(chunck);
-    return tokens.length > 300;
+      .flatMap((chunk) => chunk)
+      .map((chunk) => chunk.trim())
+      .filter((chunk) => chunk.length > 1);
   });
-  encoder.free();
+
+  let longChunk = chunks.find((chunk) => chunk.split(" ").length > maxToken);
 
   if (longChunk) throw `Too long: ${longChunk}`;
-  return chuncks;
+  return chunks;
 }
 
 function assignVoicesForCharacters(characters) {
@@ -296,7 +305,12 @@ async function generateScenePrompts(title) {
   if (!story.coverImagePrompt) {
     story.coverImagePrompt = (
       await generateContinousStoryScenePrompts(
-        [story.contentChunks[0].content],
+        [
+          story.contentChunks
+            .slice(0, 5)
+            .map((chunck) => chunck.content)
+            .join(". "),
+        ],
         story.genre,
         story.characters
       )

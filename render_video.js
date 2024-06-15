@@ -10,57 +10,23 @@ const {
   BACK_OFF_RETRY,
 } = require("async-parallel-foreach");
 
-const sizeMapping = {
-  standard: { width: 1360, height: 768 },
-  short: { width: 768, height: 1360 },
-};
-const lineLengthMappings = {
-  standard: 6,
-  short: 4,
-};
-
-const lineYStartMappings = {
-  standard: 700,
-  short: 200,
-};
-
-const genreBGM = {
-  horror: "./BGMs/Horror-Long-Version.mp3",
-  default: "./BGMs/Sunset-Landscape.mp3",
-  kid: "./BGMs/Sunset-Landscape.mp3",
-  mythology: "./BGMs/inspiring-cinematic-ambient.mp3",
-};
-
-const titleFonts = {
-  horror: "./fonts/SUBTLE.TTF",
-  default: "./fonts/Comfortaa_Bold.ttf",
-  kid: "./fonts/Comfortaa_Bold.ttf",
-};
-
-const titleFontColors = {
-  horror: "#FF0000",
-  default: "#FFFF00",
-  kid: "#FFFF00",
-};
-
-const coverImages = {
-  standard: "./cover/scary_forest.png",
-  short: "./cover/scary_forest_vertical.png",
-};
-
-const subtitleFontSizes = {
-  standard: 40,
-  short: 20,
-};
-
-const clipGappingTime = 0.5;
+const {
+  sizeMapping,
+  lineLengthMappings,
+  lineYStartMappings,
+  genreBGM,
+  titleFonts,
+  titleFontColors,
+  coverImages,
+  subtitleFontSizes,
+  clipGappingTime,
+} = require("./config");
 
 async function renderVideo(topic) {
   const current = Date.now();
   const storyFolder = createFolderIfNotExist("short_story", topic);
   const storyVideoFolder = createFolderIfNotExist(storyFolder, "videos");
   const storyTempFolder = createFolderIfNotExist(storyVideoFolder, "temp");
-
   const storyJsonPath = path.resolve(storyFolder, "story.json");
   let story = JSON.parse(fs.readFileSync(storyJsonPath, "utf8"));
   if (story.videoFilePath && fs.existsSync(story.videoFilePath)) {
@@ -150,7 +116,7 @@ async function renderVideo(topic) {
       },
       clipWords: [],
       duration: titleAudioDuration + 2,
-      noZoomIn: true,
+      effect: "zoomInFilter",
     },
   ];
 
@@ -210,6 +176,7 @@ async function renderVideo(topic) {
     videoConfigClip.clipImage = clipImage;
     videoConfigClip.clipWords = clipWords;
     videoConfigClip.duration = clipImage.duration;
+    videoConfigClip.effect = "movingCropFilter";
     videoConfigClips.push(videoConfigClip);
   }
   videoConfigClips.slice(-1)[0].duration += 4;
@@ -252,21 +219,26 @@ ${subtitles.join("\n")}
 
   const processLimit = 10;
   await asyncParallelForEach(
-    videoConfigClips.toSorted((a, b) => a.duration - b.duration),
+    videoConfigClips.toSorted((a, b) => (a.duration - b.duration > 0 ? 1 : -1)),
     processLimit,
     async (videoConfigClip, index) => {
       const mergedVideoPath = path.resolve(
         storyTempFolder,
         `temp_merged_video_${index}.mkv`
       );
-      const zoomInRate = 0.0005;
-      const framerate = 20;
-      await exec(
-        `ffmpeg -loop 1 -framerate ${framerate} -i "${videoConfigClip.clipImage.filePath}" \
-       -vf ${videoConfigClip.noZoomIn ? `scale=${size.width}x${size.height}` : `"scale=8000:-1,zoompan=z='min(1.50,zoom+${zoomInRate})':x=iw/2-(iw/zoom/2):y=ih/2-(ih/zoom/2):d=${videoConfigClip.duration * framerate}:s=${size.width}x${size.height}:fps=${framerate}"`} \
-      -t ${videoConfigClip.duration} -vcodec libx264 -pix_fmt yuv420p -y "${mergedVideoPath}"`
-      );
-      videoConfigClip.videoFilePath = mergedVideoPath;
+
+      const framerate = 60;
+      try {
+        await exec(
+          `ffmpeg -loop 1 -framerate ${framerate} -i "${videoConfigClip.clipImage.filePath}" \
+         -t ${videoConfigClip.duration}  -vf "${createVideoEffect(videoConfigClip, framerate, size)}" \
+        -vcodec libx264 -pix_fmt yuv420p -y "${mergedVideoPath}"`
+        );
+        videoConfigClip.videoFilePath = mergedVideoPath;
+      } catch (ex) {
+        console.log(ex);
+        throw ex;
+      }
     },
     {
       times: 10, // try at most 10 times
@@ -395,6 +367,92 @@ ${subtitles.join("\n")}
   fs.writeFileSync(storyJsonPath, JSON.stringify(story, null, 4));
 
   console.log("time elapsed:", (Date.now() - current) / 60000);
+}
+
+function createVideoEffect(videoConfigClip, framerate, size) {
+  const zoomInRate = 0.0005;
+  const scaleFactor = 1.3;
+  const scaledWidth = Math.floor(size.width * scaleFactor);
+  const scaledHeight = Math.floor(size.height * scaleFactor);
+
+  const centerX = scaledWidth / 2 - size.width / 2;
+  const centerY = scaledHeight / 2 - size.height / 2;
+  const maxCropX = scaledWidth - size.width;
+  const maxCropY = scaledHeight - size.height;
+
+  const points = [];
+  const pixelPerSecond = 60;
+  const pixelPerFrame = pixelPerSecond / framerate;
+  const startX = Math.ceil(Math.random() * maxCropX);
+  const startY = Math.ceil(Math.random() * maxCropY);
+
+  points.push(
+    {
+      x: startX,
+      y: startY,
+      pixelPerFrame,
+    },
+    {
+      x: centerX,
+      y: centerY,
+      pixelPerFrame,
+    }
+  );
+
+  switch (videoConfigClip.effect) {
+    case "movingCropFilter":
+      return createMovingCropFilter(points, size, scaleFactor, 0);
+    case "zoomInFilter":
+      return createZoomInFilter(
+        zoomInRate,
+        framerate,
+        videoConfigClip.duration,
+        size
+      );
+    default:
+      return createScaleFilter(size);
+  }
+}
+
+function createScaleFilter(size) {
+  return `scale=${size.width}x${size.height}`;
+}
+
+function createZoomInFilter(zoomInRate, framerate, duration, size) {
+  return `scale=8000:-1,zoompan=z='min(1.50,zoom+${zoomInRate})':x=iw/2-(iw/zoom/2):y=ih/2-(ih/zoom/2):d=${duration * framerate}:s=${size.width}x${size.height}:fps=${framerate}`;
+}
+
+function createMovingCropFilter(points, size, scaleFactor, startFrame = 0) {
+  const scaledWidth = Math.floor(size.width * scaleFactor);
+  const scaledHeight = Math.floor(size.height * scaleFactor);
+  const movingCropFilterXY = createMovingCropFilterXY(points, startFrame);
+  return `scale=${scaledWidth}x${scaledHeight}, crop='${size.width}:${size.height}:${movingCropFilterXY.x}:${movingCropFilterXY.y}'`;
+}
+
+function createMovingCropFilterXY(points, startFrame = 0) {
+  if (points.length === 1) {
+    return { x: points[0].x, y: points[0].y };
+  }
+
+  const { x: startX, y: startY, pixelPerFrame } = points[0];
+  const { x: endX, y: endY } = points[1];
+  const distance = Math.sqrt((startX - endX) ** 2 + (startY - endY) ** 2);
+  const numberFrames = Math.ceil(distance / pixelPerFrame);
+
+  const radSin = Math.asin((endX - startX) / distance);
+  const pixelPerFrameX = -Math.sin(radSin) * pixelPerFrame;
+  const radCos = Math.acos((endY - startY) / distance);
+  const pixelPerFrameY = -Math.cos(radCos) * pixelPerFrame;
+
+  const nextYX = createMovingCropFilterXY(
+    points.slice(1),
+    startFrame + numberFrames
+  );
+
+  return {
+    x: `if(between(n,${startFrame},${startFrame + numberFrames}),${startX}${pixelPerFrameX > 0 ? `-${pixelPerFrameX}` : `+${0 - pixelPerFrameX}`}*(n -${startFrame}), ${nextYX.x})`,
+    y: `if(between(n,${startFrame},${startFrame + numberFrames}),${startY}${pixelPerFrameY > 0 ? `-${pixelPerFrameY}` : `+${0 - pixelPerFrameY}`}*(n- ${startFrame}), ${nextYX.y})`,
+  };
 }
 
 if (require.main === module && process.argv[2]) {
