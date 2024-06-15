@@ -42,6 +42,7 @@ const subtitleFontSizes = {
 };
 
 const clipGappingTime = 0.5;
+const framerate = 60;
 
 module.exports = {
   sizeMapping,
@@ -53,4 +54,5 @@ module.exports = {
   coverImages,
   subtitleFontSizes,
   clipGappingTime,
+  framerate,
 };

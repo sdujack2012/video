@@ -11,7 +11,6 @@ const {
   freeVRams,
 } = require("./resources_utils");
 const { getAudioDurationInSeconds } = require("get-audio-duration");
-const { encoding_for_model } = require("@dqbd/tiktoken");
 
 async function generateScenes(title) {
   const storyFolder = createFolderIfNotExist("short_story", title);
@@ -40,6 +39,7 @@ async function generateScenes(title) {
       storyImageFolder,
       `scene ${chunkIndex + 1}.png`
     );
+    contentChunk.imageSize = { width, height };
 
     imagesInfos.push({
       outputFile: contentChunk.sceneImageFile,
