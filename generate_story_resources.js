@@ -346,7 +346,7 @@ async function generateVideoResources(title) {
   await generateStoryAudios(title);
   await generateTranscript(title);
   await generateScenePrompts(title);
-  await freeVRams();
+  freeVRams();
   await generateScenes(title);
 }
 

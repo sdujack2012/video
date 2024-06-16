@@ -72,6 +72,7 @@ async function renderVideo(topic) {
         storyTempFolder,
         `temp_merged_video_${index}.mkv`
       );
+      console.log(`Rendering clip ${index}/${videoConfigClips.length}`);
       try {
         await renderVideoClipConfig(
           videoConfigClip,
@@ -104,7 +105,9 @@ async function renderVideo(topic) {
     videoConfigClipChunks,
     7,
     async (videoConfigClipChunk, index) => {
-      console.log(`Creating video chunk ${index}`);
+      console.log(
+        `Creating video chunk ${index}/${videoConfigClipChunks.length}`
+      );
 
       const audioVideoPath = path.resolve(
         storyTempFolder,
@@ -152,7 +155,7 @@ async function renderVideo(topic) {
   );
 
   await exec(
-    `ffmpeg -i "${mergedVideoPath}" -stream_loop -1 -i "${bgm}" -i "${assFilePath}" -filter_complex "[0:a][1:a] amix=inputs=2:duration=first[aout];[aout]afade=type=out:duration=${audioFadeOutDuration}:start_time=${totalDuration - audioFadeOutDuration}[afinal]" -pix_fmt yuv420p -c:v copy -c:a aac -c:s copy -map 0:v -map "[afinal]" -map 2:s  -y "${finalVideoPath}"`
+    `ffmpeg -i "${mergedVideoPath}" -stream_loop -1 -i "${bgm}" -i "${assFilePath}" -filter_complex "[0:a][1:a] amix=inputs=2:duration=first[aout];[aout]afade=type=out:duration=${audioFadeOutDuration}:start_time=${totalDuration - audioFadeOutDuration}[afinal]" -c:v copy -c:a aac -c:s copy -map 0:v -map "[afinal]" -map 2:s  -y "${finalVideoPath}"`
   );
 
   story = JSON.parse(fs.readFileSync(storyJsonPath, "utf8"));
@@ -264,7 +267,7 @@ async function renderVideoClipChunk(
     .join(";");
 
   await exec(
-    `ffmpeg ${videoInputString} -filter_complex "${videoTransitions}" -movflags +faststart -map "[video]" -c:v h264_nvenc -preset p6 -preset fast -y "${mergedVideoPath}"`
+    `ffmpeg ${videoInputString} -filter_complex "${videoTransitions}" -movflags +faststart -map "[video]" -c:v h264_nvenc -preset p6 -y "${mergedVideoPath}"`
   );
 
   // join aduios
@@ -304,7 +307,7 @@ async function renderVideoClipConfig(videoConfigClip, screenSize, filePath) {
   await exec(
     `ffmpeg -loop 1 -framerate ${framerate}  -i "${videoConfigClip.clipImage.filePath}" \
      -t ${videoConfigClip.duration}  -vf "${createVideoEffect(videoConfigClip, framerate, screenSize)}" \
-     -c:v h264_nvenc -preset p6 -y "${filePath}"`
+     -pix_fmt yuv420p -c:v h264_nvenc -preset p6 -y "${filePath}"`
   );
   videoConfigClip.videoFilePath = filePath;
 }
