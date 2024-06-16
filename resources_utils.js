@@ -232,6 +232,7 @@ Please write a Stable Diffusion prompt to create a cover image for the following
 async function generateContinousStoryScenePrompts(
   sceneDescriptions,
   genre,
+  style,
   characters
 ) {
   console.log("Batch Generating scene prompts");
@@ -253,7 +254,7 @@ All image prompts should evoke ${genre} styles.
       content: `
 Write a Stable Diffusion prompt for the following scene: ${sceneDescription}, based on the formula.
 Consider the context of the story and fill in the formula accordingly.
-The style should match the genre type: ${genre}.  Only capture the essence of the scene using very concise language. 
+The style should match the specified genre type: ${genre} and style: ${style} .  Only capture the essence of the scene using very concise language. 
 ${characters ? `Include the characters' appearance and names as specified in this JSON: ${JSON.stringify(characters)} when referring to the characters. Output only the concise prompt in plain text, and nothing else.` : ""}
 `,
     };

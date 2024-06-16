@@ -138,8 +138,14 @@ async function renderVideo(topic) {
   //mix merged videos with bgm and subtitle
   console.log(`mix merged videos with bgm`);
   const finalVideoPath = path.resolve(storyVideoFolder, `video.mkv`);
+  const totalDuration = videoConfigClips.reduce(
+    (totalDuration, videoConfigClip) =>
+      videoConfigClip.duration + totalDuration,
+    0
+  );
+  const audioFadingOutTime = 4;
   await exec(
-    `ffmpeg -i "${mergedVideoPath}" -stream_loop -1 -i "${bgm}" -i "${assFilePath}"  -filter_complex "[0:a][1:a] amix=inputs=2:duration=first[outa]" -c:v copy -c:a aac -c:s copy -map 0:v -map "[outa]" -map 2:s  -y "${finalVideoPath}"`
+    `ffmpeg -i "${mergedVideoPath}" -stream_loop -1 -i "${bgm}" -i "${assFilePath}"  -filter_complex "[0:a][1:a] amix=inputs=2:duration=first[aout];[aout]afade=type=out:duration=${audioFadingOutTime}:start_time=${totalDuration - audioFadingOutTime}[afinal]" -c:v copy -c:a aac -c:s copy -map 0:v -map "[afinal]" -map 2:s  -y "${finalVideoPath}"`
   );
 
   story = JSON.parse(fs.readFileSync(storyJsonPath, "utf8"));
@@ -155,7 +161,6 @@ async function renderVideoClipChunk(
   outputFilePath,
   index
 ) {
-  console.log(`Creating video chunk ${index}`);
   // join images with transition effects
   let previousOffset = 0;
   const transitionDuration = 0.2;
