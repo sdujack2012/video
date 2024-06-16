@@ -19,6 +19,8 @@ const {
   subtitleFontSizes,
   clipGappingTime,
   framerate,
+  transitionDuration,
+  audioFadeOutDuration,
 } = require("./config");
 
 async function renderVideo(topic) {
@@ -61,9 +63,9 @@ async function renderVideo(topic) {
   );
 
   // Render each video clip concurrently
-  const processLimit = 10;
+  const processLimit = 7;
   await asyncParallelForEach(
-    videoConfigClips.toSorted((a, b) => (a.duration - b.duration > 0 ? 1 : -1)),
+    videoConfigClips,
     processLimit,
     async (videoConfigClip, index) => {
       const mergedVideoPath = path.resolve(
@@ -83,7 +85,7 @@ async function renderVideo(topic) {
       }
     },
     {
-      times: 10, // try at most 10 times
+      times: 1, // try at most 10 times
       interval: BACK_OFF_RETRY.exponential(),
     }
   );
@@ -100,7 +102,7 @@ async function renderVideo(topic) {
 
   await asyncParallelForEach(
     videoConfigClipChunks,
-    5,
+    7,
     async (videoConfigClipChunk, index) => {
       console.log(`Creating video chunk ${index}`);
 
@@ -108,16 +110,21 @@ async function renderVideo(topic) {
         storyTempFolder,
         `video_audio_${index}.mkv`
       );
-      await renderVideoClipChunk(
-        videoConfigClipChunk,
-        storyTempFolder,
-        audioVideoPath,
-        index
-      );
-      audioVideoPaths[index] = audioVideoPath;
+      try {
+        await renderVideoClipChunk(
+          videoConfigClipChunk,
+          storyTempFolder,
+          audioVideoPath,
+          index
+        );
+        audioVideoPaths[index] = audioVideoPath;
+      } catch (ex) {
+        console.log(ex);
+        throw ex;
+      }
     },
     {
-      times: 10, // try at most 10 times
+      times: 1, // try at most 10 times
       interval: BACK_OFF_RETRY.exponential(),
     }
   );
@@ -143,9 +150,9 @@ async function renderVideo(topic) {
       videoConfigClip.duration + totalDuration,
     0
   );
-  const audioFadingOutTime = 4;
+
   await exec(
-    `ffmpeg -i "${mergedVideoPath}" -stream_loop -1 -i "${bgm}" -i "${assFilePath}"  -filter_complex "[0:a][1:a] amix=inputs=2:duration=first[aout];[aout]afade=type=out:duration=${audioFadingOutTime}:start_time=${totalDuration - audioFadingOutTime}[afinal]" -c:v copy -c:a aac -c:s copy -map 0:v -map "[afinal]" -map 2:s  -y "${finalVideoPath}"`
+    `ffmpeg -i "${mergedVideoPath}" -stream_loop -1 -i "${bgm}" -i "${assFilePath}" -filter_complex "[0:a][1:a] amix=inputs=2:duration=first[aout];[aout]afade=type=out:duration=${audioFadeOutDuration}:start_time=${totalDuration - audioFadeOutDuration}[afinal]" -pix_fmt yuv420p -c:v copy -c:a aac -c:s copy -map 0:v -map "[afinal]" -map 2:s  -y "${finalVideoPath}"`
   );
 
   story = JSON.parse(fs.readFileSync(storyJsonPath, "utf8"));
@@ -161,9 +168,70 @@ async function renderVideoClipChunk(
   outputFilePath,
   index
 ) {
+  const xfadeEffects = [
+    "fade",
+    "wipeleft",
+    "wiperight",
+    "wipeup",
+    "wipedown",
+    "slideleft",
+    "slideright",
+    "slideup",
+    "slidedown",
+    "circlecrop",
+    "rectcrop",
+    "distance",
+    "fadeblack",
+    "fadewhite",
+    "radial",
+    "smoothleft",
+    "smoothright",
+    "smoothup",
+    "smoothdown",
+    "circleopen",
+    "circleclose",
+    "vertopen",
+    "vertclose",
+    "horzopen",
+    "horzclose",
+    "dissolve",
+    "pixelize",
+    "diagtl",
+    "diagtr",
+    "diagbl",
+    "diagbr",
+    "hlslice",
+    "hrslice",
+    "vuslice",
+    "vdslice",
+    "hblur",
+    "fadegrays",
+    "wipetl",
+    "wipetr",
+    "wipebl",
+    "wipebr",
+    "squeezeh",
+    "squeezev",
+    "zoomin",
+    "fadefast",
+    "fadeslow",
+    "hlwind",
+    "hrwind",
+    "vuwind",
+    "vdwind",
+    "coverleft",
+    "coverright",
+    "coverup",
+    "coverdown",
+    "revealleft",
+    "revealright",
+    "revealup",
+    "revealdown",
+  ];
+
   // join images with transition effects
   let previousOffset = 0;
-  const transitionDuration = 0.2;
+
   const videoInputString = videoConfigClipChunk
     .map((videoConfigClip) => `-i "${videoConfigClip.videoFilePath}"`)
     .join(" ");
@@ -175,7 +243,8 @@ async function renderVideoClipChunk(
   const videoTransitions = videoConfigClipChunk
     .map((videoConfigClip, index) => {
       if (videoConfigClipChunk.length - 1 === index) return "";
-
+      const effect =
+        xfadeEffects[Math.floor(Math.random() * xfadeEffects.length)];
       const offset =
         videoConfigClip.duration + previousOffset - transitionDuration;
       previousOffset = offset;
@@ -183,7 +252,7 @@ async function renderVideoClipChunk(
 
       transition +=
         index === 0 ? "[0:v][1:v]" : `[vfade${index}][${index + 1}]`;
-      transition += `xfade=transition=hrslice:duration=${transitionDuration}:offset=${offset}`;
+      transition += `xfade=transition=${effect}:duration=${transitionDuration}:offset=${offset}`;
 
       transition +=
         index === videoConfigClipChunk.length - 2
@@ -195,7 +264,7 @@ async function renderVideoClipChunk(
     .join(";");
 
   await exec(
-    `ffmpeg ${videoInputString} -filter_complex "${videoTransitions}" -movflags +faststart -map "[video]" -y "${mergedVideoPath}"`
+    `ffmpeg ${videoInputString} -filter_complex "${videoTransitions}" -movflags +faststart -map "[video]" -c:v h264_nvenc -preset p6 -preset fast -y "${mergedVideoPath}"`
   );
 
   // join aduios
@@ -232,11 +301,10 @@ async function renderVideoClipChunk(
 }
 
 async function renderVideoClipConfig(videoConfigClip, screenSize, filePath) {
-  const framerate = 60;
   await exec(
-    `ffmpeg -loop 1 -framerate ${framerate} -i "${videoConfigClip.clipImage.filePath}" \
+    `ffmpeg -loop 1 -framerate ${framerate}  -i "${videoConfigClip.clipImage.filePath}" \
      -t ${videoConfigClip.duration}  -vf "${createVideoEffect(videoConfigClip, framerate, screenSize)}" \
-    -vcodec libx264 -pix_fmt yuv420p -y "${filePath}"`
+     -c:v h264_nvenc -preset p6 -y "${filePath}"`
   );
   videoConfigClip.videoFilePath = filePath;
 }
@@ -382,7 +450,7 @@ async function createVideoClipConfigs(story, coverImageWithTitlePath) {
     videoConfigClip.imageSize = contentChunk.imageSize;
     videoConfigClips.push(videoConfigClip);
   }
-  videoConfigClips.slice(-1)[0].duration += 4;
+  videoConfigClips.slice(-1)[0].duration += audioFadeOutDuration;
   return videoConfigClips;
 }
 
@@ -451,9 +519,20 @@ function createVideoEffect(videoConfigClip, framerate, screenSize) {
 
   const points = [];
   const pixelPerSecond = 60;
+
   const pixelPerFrame = pixelPerSecond / framerate;
-  const startX = Math.ceil(Math.random() * maxCropX);
-  const startY = Math.ceil(Math.random() * maxCropY);
+  const totalPixels =
+    pixelPerSecond * (videoConfigClip.duration - transitionDuration);
+
+  const rad = Math.random() * 2 * Math.PI;
+
+  let startX = centerX + Math.cos(rad) * totalPixels;
+  startX = startX > maxCropX ? maxCropX : startX;
+  startX = startX < 0 ? 0 : startX;
+
+  let startY = maxCropY + Math.sin(rad) * totalPixels;
+  startY = startY > maxCropY ? maxCropY : startY;
+  startY = startY < 0 ? 0 : startY;
 
   points.push(
     {

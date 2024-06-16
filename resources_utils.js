@@ -267,7 +267,7 @@ ${characters ? `Include the characters' appearance and names as specified in thi
     messages.push(prompt);
 
     const message = await generateTextOpenAI(messages, "ollama", "llama3");
-    scenePrompts.push(message.content);
+    scenePrompts.push(message.content + `, ${style} style`);
     messages.push(message);
   }
 
