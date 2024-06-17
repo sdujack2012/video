@@ -110,12 +110,7 @@ async function renderVideo(topic) {
         `video_audio_${index}.mkv`
       );
       try {
-        await renderVideoClipChunk(
-          videoConfigClipChunk,
-          storyTempFolder,
-          audioVideoPath,
-          index
-        );
+        await renderVideoClipChunk(videoConfigClipChunk, audioVideoPath);
         audioVideoPaths[index] = audioVideoPath;
       } catch (ex) {
         console.log(ex);
@@ -163,12 +158,7 @@ async function renderVideo(topic) {
   console.log("time elapsed:", (Date.now() - current) / 60000);
 }
 
-async function renderVideoClipChunk(
-  videoConfigClipChunk,
-  storyTempFolder,
-  outputFilePath,
-  index
-) {
+async function renderVideoClipChunk(videoConfigClipChunk, outputFilePath) {
   const xfadeEffects = [
     "fade",
     "wipeleft",
@@ -236,11 +226,6 @@ async function renderVideoClipChunk(
   const videoInputString = videoConfigClipChunk
     .map((videoConfigClip) => `-i "${videoConfigClip.videoFilePath}"`)
     .join(" ");
-  const mergedVideoPath = path.resolve(
-    storyTempFolder,
-    `merged_video_${index}.mkv`
-  );
-
   const videoTransitions = videoConfigClipChunk
     .map((videoConfigClip, index) => {
       if (videoConfigClipChunk.length - 1 === index) return "";
@@ -252,7 +237,7 @@ async function renderVideoClipChunk(
       let transition = "";
 
       transition +=
-        index === 0 ? "[0:v][1:v]" : `[vfade${index}][${index + 1}]`;
+        index === 0 ? "[0:v][1:v]" : `[vfade${index}][${index + 1}:v]`;
       transition += `xfade=transition=${effect}:duration=${transitionDuration}:offset=${offset}`;
 
       transition +=
@@ -263,49 +248,41 @@ async function renderVideoClipChunk(
       return transition;
     })
     .join(";");
+  const audioTransitions = videoConfigClipChunk
+    .map((videoConfigClip, index) => {
+      if (videoConfigClipChunk.length - 1 === index) return "";
+      let transition = "";
+      transition += index === 0 ? "[0:a][1:a]" : `[a${index}][${index + 1}:a]`;
+      transition += `acrossfade=d=${transitionDuration}:c1=tri:c2=tri`;
 
-  await exec(
-    `ffmpeg ${videoInputString} -filter_complex "${videoTransitions}" -movflags +faststart -map "[video]" -c:v h264_nvenc -preset p6 -y "${mergedVideoPath}"`
-  );
+      transition +=
+        index === videoConfigClipChunk.length - 2
+          ? "[audio]"
+          : `[a${index + 1}]`;
 
-  // join aduios
-  const mergedAuidoPath = path.resolve(
-    storyTempFolder,
-    `merged_audio_${index}.mp3`
-  );
-  const audioInputString = videoConfigClipChunk
-    .map((videoConfigClip) => {
-      const audioConfig = videoConfigClip.audioConfig;
-      // mix video with audio
-      const videoDuration = videoConfigClip.duration;
-      let silencePaddingAfter =
-        videoDuration - audioConfig.startTime - audioConfig.duration;
-      silencePaddingAfter =
-        silencePaddingAfter > 0 ? silencePaddingAfter : 0.001;
-      return `-f lavfi -t "${audioConfig.startTime}" -i anullsrc=channel_layout=stereo:sample_rate=44100 -i "${audioConfig.filePath}" -f lavfi -t "${silencePaddingAfter}" -i anullsrc=channel_layout=stereo:sample_rate=44100`;
+      return transition;
     })
-    .join(" ");
-  const joinAudiosCommand = `ffmpeg ${audioInputString} -filter_complex "${Array(
-    3 * videoConfigClipChunk.length
-  )
-    .fill(0)
-    .map((_, index) => `[${index}]`)
-    .join(
-      ""
-    )} concat=n=${videoConfigClipChunk.length * 3}:v=0:a=1[audio]" -map "[audio]" -y "${mergedAuidoPath}"`;
-  await exec(joinAudiosCommand);
+    .join(";");
 
   // join video with audio
-  const mixAudioVideoCommand = `ffmpeg -i "${mergedVideoPath}" -i "${mergedAuidoPath}" -c:v copy -c:a copy -y "${outputFilePath}"`;
-  await exec(mixAudioVideoCommand);
+  await exec(
+    `ffmpeg ${videoInputString} -filter_complex "${audioTransitions}${videoTransitions}" -map "[video]" -map [audio] -c:a aac -c:v h264_nvenc -preset p6 -y "${outputFilePath}"`
+  );
   return outputFilePath;
 }
 
 async function renderVideoClipConfig(videoConfigClip, screenSize, filePath) {
+  const audioConfig = videoConfigClip.audioConfig;
+  const videoDuration = videoConfigClip.duration;
+  let silencePaddingAfter =
+    videoDuration - audioConfig.startTime - audioConfig.duration;
+  silencePaddingAfter = silencePaddingAfter > 0 ? silencePaddingAfter : 0.001;
+  const audioInput = `-f lavfi -t "${audioConfig.startTime}" -i anullsrc=channel_layout=stereo:sample_rate=44100 -i "${audioConfig.filePath}" -t "${audioConfig.duration}" -f lavfi -t "${silencePaddingAfter}" -i anullsrc=channel_layout=stereo:sample_rate=44100`;
+  const videopInput = `-loop 1 -framerate ${framerate} -i "${videoConfigClip.clipImage.filePath}" -t "${audioConfig.duration}"`;
   await exec(
-    `ffmpeg -loop 1 -framerate ${framerate}  -i "${videoConfigClip.clipImage.filePath}" \
-     -t ${videoConfigClip.duration}  -vf "${createVideoEffect(videoConfigClip, framerate, screenSize)}" \
-     -pix_fmt yuv420p -c:v h264_nvenc -preset p6 -y "${filePath}"`
+    `ffmpeg  ${videopInput} ${audioInput} \
+    -filter_complex "[0:v]${createVideoEffect(videoConfigClip, framerate, screenSize)}[v];[1:a][2:a][3:a]concat=n=3:v=0:a=1[a]" \
+    -shortest -pix_fmt yuv420p -c:v h264_nvenc -c:a aac -map "[v]" -map "[a]" -preset p6 -y "${filePath}"`
   );
   videoConfigClip.videoFilePath = filePath;
 }
