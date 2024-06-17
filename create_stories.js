@@ -24,7 +24,7 @@ async function createShortStories() {
       fs.writeFileSync(storyJsonPath, JSON.stringify(story, null, 4));
     }
     const existingStory = JSON.parse(fs.readFileSync(storyJsonPath, "utf8"));
-    if (fs.existsSync(existingStory.videoFile) && existingStory.hasVideo) {
+    if (fs.existsSync(existingStory.videoFilePath) && existingStory.hasVideo) {
       continue;
     }
 

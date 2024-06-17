@@ -65,7 +65,7 @@ async function generateScenes(title) {
 
 function splitLongTextIntoChunks(content) {
   const tokenLimit = 20;
-  const maxToken = 100;
+  const maxToken = 200;
 
   const relativeSeparators = ["\n", ".", "?", "!", ";"];
 

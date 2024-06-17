@@ -30,10 +30,6 @@ async function renderVideo(topic) {
   const storyTempFolder = createFolderIfNotExist(storyVideoFolder, "temp");
   const storyJsonPath = path.resolve(storyFolder, "story.json");
   let story = JSON.parse(fs.readFileSync(storyJsonPath, "utf8"));
-  if (story.videoFilePath && fs.existsSync(story.videoFilePath)) {
-    console.log("Skip rendering video");
-    return;
-  }
 
   const screenSize = sizeMapping[story.videoType];
 
@@ -63,7 +59,7 @@ async function renderVideo(topic) {
   );
 
   // Render each video clip concurrently
-  const processLimit = 7;
+  const processLimit = 5;
   await asyncParallelForEach(
     videoConfigClips,
     processLimit,
@@ -103,7 +99,7 @@ async function renderVideo(topic) {
 
   await asyncParallelForEach(
     videoConfigClipChunks,
-    7,
+    5,
     async (videoConfigClipChunk, index) => {
       console.log(
         `Creating video chunk ${index}/${videoConfigClipChunks.length}`
@@ -160,6 +156,8 @@ async function renderVideo(topic) {
 
   story = JSON.parse(fs.readFileSync(storyJsonPath, "utf8"));
   story.videoFilePath = finalVideoPath;
+  story.hasVideo = true;
+
   fs.writeFileSync(storyJsonPath, JSON.stringify(story, null, 4));
 
   console.log("time elapsed:", (Date.now() - current) / 60000);
@@ -283,7 +281,7 @@ async function renderVideoClipChunk(
       let silencePaddingAfter =
         videoDuration - audioConfig.startTime - audioConfig.duration;
       silencePaddingAfter =
-        silencePaddingAfter > 0 ? silencePaddingAfter : 0.01;
+        silencePaddingAfter > 0 ? silencePaddingAfter : 0.001;
       return `-f lavfi -t "${audioConfig.startTime}" -i anullsrc=channel_layout=stereo:sample_rate=44100 -i "${audioConfig.filePath}" -f lavfi -t "${silencePaddingAfter}" -i anullsrc=channel_layout=stereo:sample_rate=44100`;
     })
     .join(" ");
