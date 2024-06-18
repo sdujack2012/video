@@ -10,6 +10,7 @@ const {
   BACK_OFF_RETRY,
 } = require("async-parallel-foreach");
 
+const { batchGenerateTranscripts } = require("./resources_utils");
 const {
   sizeMapping,
   genreBGM,
@@ -52,23 +53,17 @@ async function renderVideo(topic) {
     coverImageWithTitlePath
   );
 
-  const assFilePath = createSubtitles(
-    videoConfigClips,
-    storyVideoFolder,
-    story.videoType
-  );
-
   // Render each video clip concurrently
-  const processLimit = 5;
+  const processLimit = 7;
   await asyncParallelForEach(
-    videoConfigClips,
+    videoConfigClips.toSorted((a, b) => (a.duration - b.duration > 0 ? 1 : -1)),
     processLimit,
     async (videoConfigClip, index) => {
       const mergedVideoPath = path.resolve(
         storyTempFolder,
-        `temp_merged_video_${index}.mkv`
+        `temp_merged_video_${index + 1}.mkv`
       );
-      console.log(`Rendering clip ${index}/${videoConfigClips.length}`);
+      console.log(`Rendering clip ${index + 1}/${videoConfigClips.length}`);
       try {
         await renderVideoClipConfig(
           videoConfigClip,
@@ -96,13 +91,13 @@ async function renderVideo(topic) {
     videoConfigClips,
     chunkSplitLimit
   );
-
+  console.log(`Creating video chunk`);
   await asyncParallelForEach(
     videoConfigClipChunks,
     5,
     async (videoConfigClipChunk, index) => {
       console.log(
-        `Creating video chunk ${index}/${videoConfigClipChunks.length}`
+        `Creating video chunk ${index + 1}/${videoConfigClipChunks.length}`
       );
 
       const audioVideoPath = path.resolve(
@@ -119,7 +114,7 @@ async function renderVideo(topic) {
     },
     {
       times: 1, // try at most 10 times
-      interval: BACK_OFF_RETRY.exponential(),
+      interval: BACK_OFF_RETRY.randomBetween(1, 1),
     }
   );
 
@@ -131,13 +126,35 @@ async function renderVideo(topic) {
   const videoListPath = path.resolve(storyTempFolder, `video_list.txt`);
   fs.writeFileSync(videoListPath, videoList);
 
+  // creating auido and subtitles
+  const createAssFile = async () => {
+    console.log("Creating auido and subtitles");
+    const finalAudioPath = path.resolve(storyVideoFolder, `audio.ogg`);
+    await exec(
+      `ffmpeg -safe 0 -f concat -i "${videoListPath}" -vn -map_metadata -1 -ac 1 -c:a libopus -b:a 12k -application voip -y "${finalAudioPath}`
+    );
+    console.log("Extracting transcript");
+    const transcript = (await batchGenerateTranscripts([finalAudioPath], 0))[0];
+    const words = transcript.flatMap((segment) => segment.words);
+    const assFilePath = createSubtitles(
+      words,
+      storyVideoFolder,
+      story.videoType
+    );
+    return assFilePath;
+  };
+
+  const creatingAssFilePromise = createAssFile();
+
+  // merge video chunks
+  console.log("Merge video chunks");
   const mergedVideoPath = path.resolve(storyTempFolder, `merged_video.mkv`);
   await exec(
     `ffmpeg -safe 0 -f concat -i "${videoListPath}" -c copy -y "${mergedVideoPath}"`
   );
 
-  //mix merged videos with bgm and subtitle
-  console.log(`mix merged videos with bgm`);
+  //Mix merged videos with bgm
+  console.log(`Mix videos with bgm`);
   const finalVideoPath = path.resolve(storyVideoFolder, `video.mkv`);
   const totalDuration = videoConfigClips.reduce(
     (totalDuration, videoConfigClip) =>
@@ -145,6 +162,8 @@ async function renderVideo(topic) {
     0
   );
 
+  const assFilePath = await creatingAssFilePromise;
+  console.log("Creating final video");
   await exec(
     `ffmpeg -i "${mergedVideoPath}" -stream_loop -1 -i "${bgm}" -i "${assFilePath}" -filter_complex "[0:a][1:a] amix=inputs=2:duration=first[aout];[aout]afade=type=out:duration=${audioFadeOutDuration}:start_time=${totalDuration - audioFadeOutDuration}[afinal]" -c:v copy -c:a aac -c:s copy -map 0:v -map "[afinal]" -map 2:s  -y "${finalVideoPath}"`
   );
@@ -276,18 +295,18 @@ async function renderVideoClipConfig(videoConfigClip, screenSize, filePath) {
   const videoDuration = videoConfigClip.duration;
   let silencePaddingAfter =
     videoDuration - audioConfig.startTime - audioConfig.duration;
-  silencePaddingAfter = silencePaddingAfter > 0 ? silencePaddingAfter : 0.001;
-  const audioInput = `-f lavfi -t "${audioConfig.startTime}" -i anullsrc=channel_layout=stereo:sample_rate=44100 -i "${audioConfig.filePath}" -t "${audioConfig.duration}" -f lavfi -t "${silencePaddingAfter}" -i anullsrc=channel_layout=stereo:sample_rate=44100`;
-  const videopInput = `-loop 1 -framerate ${framerate} -i "${videoConfigClip.clipImage.filePath}" -t "${audioConfig.duration}"`;
+  silencePaddingAfter = silencePaddingAfter > 0 ? silencePaddingAfter : 0.01;
+  const audioInput = `-f lavfi -t "${audioConfig.startTime}" -i anullsrc=channel_layout=stereo:sample_rate=44100 -i "${audioConfig.filePath}" -t "${audioConfig.duration}" -f lavfi -t "${silencePaddingAfter.toFixed(2)}" -i anullsrc=channel_layout=stereo:sample_rate=44100`;
+  const videopInput = `-loop 1 -framerate ${framerate} -i "${videoConfigClip.clipImage.filePath}" -t "${videoDuration}"`;
   await exec(
-    `ffmpeg  ${videopInput} ${audioInput} \
+    `ffmpeg  ${videopInput} ${audioInput}  \
     -filter_complex "[0:v]${createVideoEffect(videoConfigClip, framerate, screenSize)}[v];[1:a][2:a][3:a]concat=n=3:v=0:a=1[a]" \
     -shortest -pix_fmt yuv420p -c:v h264_nvenc -c:a aac -map "[v]" -map "[a]" -preset p6 -y "${filePath}"`
   );
   videoConfigClip.videoFilePath = filePath;
 }
 
-function createSubtitles(videoConfigClips, storyVideoFolder, videoType) {
+function createSubtitles(words, storyVideoFolder, videoType) {
   const subtitleFontSize = subtitleFontSizes[videoType];
   const screenSize = sizeMapping[videoType];
   const subtitleYs = {
@@ -296,19 +315,32 @@ function createSubtitles(videoConfigClips, storyVideoFolder, videoType) {
   };
   const subtitleY = subtitleYs[videoType];
 
-  let currentTime = 0;
-  const subtitles = [];
-  videoConfigClips.forEach((videoConfigClip) => {
-    subtitles.push(
-      ...videoConfigClip.clipWords.map((word) => {
-        const words = [...word.words];
-        const innerIndex = word.innerIndex;
-        words[innerIndex] = `{\\c&H00FFFF&}${words[innerIndex]}{\\c&HFFFFFF&}`;
+  const clipWords = [];
+  const wordCountLimit = 6;
+  const individualWords = words.map((word) => word.word);
+  const numberOfChunks = Math.ceil(individualWords.length / wordCountLimit);
+  const chunkSize = Math.ceil(individualWords.length / numberOfChunks);
 
-        return `Dialogue: 0,${new Date((word.start + currentTime) * 1000).toISOString().slice(12, -2)},${new Date((word.end + currentTime) * 1000).toISOString().slice(12, -2)},Default,,0,0,${subtitleY},,${words.join("")}`;
-      })
-    );
-    currentTime += videoConfigClip.duration;
+  words.forEach((word, innerIndex) => {
+    const wordChunkStart = Math.floor(innerIndex / chunkSize) * chunkSize;
+    let wordChunkEnd = (Math.floor(innerIndex / chunkSize) + 1) * chunkSize + 1;
+    wordChunkEnd =
+      wordChunkEnd > individualWords.length
+        ? individualWords.length
+        : wordChunkEnd;
+    word.words = individualWords.slice(wordChunkStart, wordChunkEnd);
+    word.end =
+      innerIndex < words.length - 1 ? words[innerIndex + 1].start : word.end;
+    word.innerIndex = innerIndex - wordChunkStart;
+  });
+  clipWords.push(...words);
+
+  const subtitles = clipWords.map((word) => {
+    const words = [...word.words];
+    const innerIndex = word.innerIndex;
+    words[innerIndex] = `{\\c&H00FFFF&}${words[innerIndex]}{\\c&HFFFFFF&}`;
+
+    return `Dialogue: 0,${new Date(word.start * 1000).toISOString().slice(12, -2)},${new Date(word.end * 1000).toISOString().slice(12, -2)},Default,,0,0,${subtitleY},,${words.join("")}`;
   });
 
   const assFile = `[Script Info]
@@ -364,13 +396,12 @@ async function createVideoClipConfigs(story, coverImageWithTitlePath) {
       },
       clipWords: [],
       duration: titleAudioDuration + 2,
-      effect: "zoomInFilter",
+      effect: null,
     },
   ];
 
   for (let contentChunk of story.contentChunks) {
     const videoConfigClip = {};
-    const clipWords = [];
     const audioDuration =
       contentChunk.audioDuration ||
       (await getAudioDurationInSeconds(contentChunk.audioFile));
@@ -386,43 +417,9 @@ async function createVideoClipConfigs(story, coverImageWithTitlePath) {
       duration: audioDuration + 2 * clipGappingTime,
     };
 
-    //collect subtitles
-    contentChunk.transcript.forEach(({ words }) => {
-      const wordCountLimit = 6;
-      const individualWords = words.map((word) => word.word);
-
-      words.forEach((word, innerIndex) => {
-        const numberOfChunks = Math.ceil(
-          individualWords.length / wordCountLimit
-        );
-        const chunkSize = Math.ceil(individualWords.length / numberOfChunks);
-        const wordChunkStart = Math.floor(innerIndex / chunkSize) * chunkSize;
-        let wordChunkEnd =
-          (Math.floor(innerIndex / chunkSize) + 1) * chunkSize + 1;
-        wordChunkEnd =
-          wordChunkEnd > individualWords.length
-            ? individualWords.length
-            : wordChunkEnd;
-        word.words = individualWords.slice(wordChunkStart, wordChunkEnd);
-        word.end =
-          innerIndex < words.length - 1
-            ? words[innerIndex + 1].start
-            : word.end;
-        word.innerIndex = innerIndex - wordChunkStart;
-      });
-      clipWords.push(...words);
-    });
-
-    // add gapping time
-    clipWords.forEach((clipWord) => {
-      clipWord.end += clipGappingTime;
-      clipWord.start += clipGappingTime;
-    });
-
     // add the clip config
     videoConfigClip.audioConfig = audioConfig;
     videoConfigClip.clipImage = clipImage;
-    videoConfigClip.clipWords = clipWords;
     videoConfigClip.duration = clipImage.duration;
     videoConfigClip.effect = "movingCropFilter";
     videoConfigClip.imageSize = contentChunk.imageSize;
