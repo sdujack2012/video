@@ -43,8 +43,8 @@ const subtitleFontSizes = {
 
 const clipGappingTime = 0.5;
 const framerate = 60;
-const transitionDuration = 0.5;
-const audioFadeOutDuration = 8;
+const transitionDuration = 1;
+const audioFadeOutDuration = 3;
 
 module.exports = {
   sizeMapping,

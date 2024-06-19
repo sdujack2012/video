@@ -14,6 +14,18 @@ function createFolderIfNotExist(...pathParts) {
   return folderPath;
 }
 
+function splitArrayIntoChunks(array, chunkSplitLimit) {
+  // split clips into chunks
+  const chunkSize = Math.ceil(
+    array.length / Math.ceil(array.length / chunkSplitLimit)
+  );
+  const chunks = [];
+  for (let i = 0; i < array.length; i += chunkSize) {
+    chunks.push(array.slice(i, i + chunkSize));
+  }
+  return chunks;
+}
+
 async function executeExternalHelper(command, inputJson) {
   createFolderIfNotExist(path.resolve("temp"));
   const tempInputJson = path.resolve("temp", `temp_${Math.random()}.json`);
@@ -87,4 +99,5 @@ async function createAiSession(hostChannel) {
 exports.createFolderIfNotExist = createFolderIfNotExist;
 exports.executeExternalHelper = executeExternalHelper;
 exports.createAiSession = createAiSession;
+exports.splitArrayIntoChunks = splitArrayIntoChunks;
 exports.startOllama = startOllama;

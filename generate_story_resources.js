@@ -64,9 +64,10 @@ async function generateScenes(title) {
 }
 
 function splitLongTextIntoChunks(content) {
-  const tokenLimit = 20;
+  const tokenLimit = 40;
   const maxToken = 200;
 
+  const absoluteSeparators = ["***"];
   const relativeSeparators = ["\n", ".", "?", "!", ";"];
 
   const splitContentIntoChunks = (contentToSplit, separator) => {
@@ -100,6 +101,14 @@ function splitLongTextIntoChunks(content) {
   };
 
   let chunks = [content];
+  absoluteSeparators.forEach((separator) => {
+    chunks = chunks
+      .map((chunk) => chunk.split(separator))
+      .flatMap((chunks) => chunks)
+      .map((chunk) => chunk.trim())
+      .filter((chunk) => chunk.length > 1);
+  });
+
   relativeSeparators.forEach((separator) => {
     chunks = chunks
       .map((chunk) =>
@@ -307,14 +316,15 @@ async function generateScenePrompts(title) {
       await generateContinousStoryScenePrompts(
         [
           story.contentChunks
-            .slice(0, 5)
+            .slice(0, 10)
             .map((chunck) => chunck.content)
             .join(". "),
         ],
         story.genre,
+        story.style,
         story.characters
       )
-    )[0];
+    )[0].sceneImagePrompt;
     fs.writeFileSync(storyJsonPath, JSON.stringify(story, null, 4));
   } else {
     console.log("Skip Generate cover image prompt");
@@ -328,24 +338,22 @@ async function generateScenePrompts(title) {
     (contentChunk) => contentChunk.content
   );
 
-  const sceneImagePrompts = await generateContinousStoryScenePrompts(
+  story.contentChunks = await generateContinousStoryScenePrompts(
     sceneDescriptions,
     story.genre,
+    story.style,
     story.characters
   );
-
-  story.contentChunks.forEach((contentChunk, index) => {
-    contentChunk.sceneImagePrompt = sceneImagePrompts[index];
-  });
 
   story.hasImagePrompts = true;
   fs.writeFileSync(storyJsonPath, JSON.stringify(story, null, 4));
 }
 async function generateVideoResources(title) {
   await splitStoryIntoChunks(title);
+  await generateScenePrompts(title);
+
   await generateStoryAudios(title);
   //await generateTranscript(title);
-  await generateScenePrompts(title);
   freeVRams();
   await generateScenes(title);
 }

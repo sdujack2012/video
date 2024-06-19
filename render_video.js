@@ -1,6 +1,6 @@
 const fs = require("fs");
 const path = require("path");
-const { createFolderIfNotExist } = require("./utils");
+const { createFolderIfNotExist, splitArrayIntoChunks } = require("./utils");
 const util = require("util");
 const exec = util.promisify(require("child_process").exec);
 const { getAudioDurationInSeconds } = require("get-audio-duration");
@@ -367,17 +367,6 @@ ${subtitles.join("\n")}
   return assFilePath;
 }
 
-function splitArrayIntoChunks(array, chunkSplitLimit) {
-  // split clips into chunks
-  const chunkSize = Math.ceil(
-    array.length / Math.ceil(array.length / chunkSplitLimit)
-  );
-  const chunks = [];
-  for (let i = 0; i < array.length; i += chunkSize) {
-    chunks.push(array.slice(i, i + chunkSize));
-  }
-  return chunks;
-}
 async function createVideoClipConfigs(story, coverImageWithTitlePath) {
   //Create title clip
   const titleAudioDuration =

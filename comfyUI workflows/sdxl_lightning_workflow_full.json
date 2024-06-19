@@ -49,7 +49,7 @@
   },
   "7": {
     "inputs": {
-      "text": "",
+      "text": "ugly, tiling, poorly drawn hands, poorly drawn feet, poorly drawn face, out of frame, extra limbs, disfigured, deformed, body out of frame, bad anatomy, watermark, signature, cut off, low contrast, underexposed, overexposed, bad art, beginner, amateur, distorted face",
       "clip": ["4", 1]
     },
     "class_type": "CLIPTextEncode",

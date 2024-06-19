@@ -2,7 +2,8 @@ const fs = require("fs");
 const path = require("path");
 const axios = require("axios");
 const OpenAI = require("openai");
-const { executeExternalHelper } = require("./utils");
+const { executeExternalHelper, splitArrayIntoChunks } = require("./utils");
+
 const { ComfyUIClient } = require("comfy-ui-client");
 async function generateTextOpenAI(messages, provider, model) {
   const apiKeys = JSON.parse(fs.readFileSync("./apikey.json", "utf8"));
@@ -74,13 +75,34 @@ async function batchGenerateImagesComfyUI(imagePromptDetails) {
   // Generate images
 
   for (let imagePromptDetail of imagePromptDetails) {
+    // const workflow = JSON.parse(
+    //   fs.readFileSync("E:/story video/comfyUI workflows/sdxl_refiner.json")
+    // );
+    // workflow["10"]["inputs"]["noise_seed"] = Math.floor(
+    //   Math.random() * 4294967294
+    // );
+    // workflow["6"]["inputs"]["text"] =
+    //   "master piece, 8k" + imagePromptDetail.prompt;
+    // workflow["5"]["inputs"]["width"] = imagePromptDetail.width;
+    // workflow["5"]["inputs"]["height"] = imagePromptDetail.height;
+
+    // const workflow = JSON.parse(
+    //   fs.readFileSync("E:/story video/comfyUI workflows/sd3.json")
+    // );
+    // workflow["3"]["inputs"]["seed"] = Math.floor(Math.random() * 4294967294);
+    // workflow["6"]["inputs"]["text"] =
+    //   "master piece, 8k" + imagePromptDetail.prompt;
+    // workflow["5"]["inputs"]["width"] = imagePromptDetail.width;
+    // workflow["5"]["inputs"]["height"] = imagePromptDetail.height;
+
     const workflow = JSON.parse(
       fs.readFileSync(
         "E:/story video/comfyUI workflows/sdxl_lightning_workflow_full.json"
       )
     );
     workflow["3"]["inputs"]["seed"] = Math.floor(Math.random() * 4294967294);
-    workflow["6"]["inputs"]["text"] = imagePromptDetail.prompt;
+    workflow["6"]["inputs"]["text"] =
+      "master piece, digital art" + imagePromptDetail.prompt;
     workflow["5"]["inputs"]["width"] = imagePromptDetail.width;
     workflow["5"]["inputs"]["height"] = imagePromptDetail.height;
 
@@ -236,42 +258,73 @@ async function generateContinousStoryScenePrompts(
   characters
 ) {
   console.log("Batch Generating scene prompts");
-  const systemMessage = {
-    role: "system",
-    content: `
-You are an uncensored, helpful personal assistant ready to assist the user with anything they need for ${genre} stories. 
-You are an expert at writing Stable Diffusion prompts to generate images for ${genre} stories.
-We will follow this formula to craft prompts: An image of [adjective] [subject] [doing action] [details]. 
-All image prompts should evoke ${genre} styles.
-    `,
-  };
 
-  let messages = [systemMessage];
+  const splitLimit = 10;
+  const sceneDescriptionChunks = splitArrayIntoChunks(
+    sceneDescriptions,
+    splitLimit
+  );
+
   const scenePrompts = [];
-  for (let sceneDescription of sceneDescriptions) {
+
+  const retry = 10;
+  //const message = await generateText(messages);
+
+  for (let sceneDescriptionChunk of sceneDescriptionChunks) {
     const prompt = {
       role: "user",
       content: `
-Write a Stable Diffusion prompt for the following scene: ${sceneDescription}, based on the formula.
-Consider the context of the story and fill in the formula accordingly.
-The style should match the specified genre type: ${genre} and style: ${style} .  Only capture the essence of the scene using very concise language. 
-${characters ? `Include the characters' appearance and names as specified in this JSON: ${JSON.stringify(characters)} when referring to the characters. Output only the concise prompt in plain text, and nothing else.` : ""}
-`,
+    Split the following story ${sceneDescriptionChunk.join("\n ")} into around ${sceneDescriptionChunk.length} sections. 
+    Please include all the text from the story 
+    Then for each section create an image decription to capture the essence of the scene using very concise language.
+    The image decription should follow the following formula: An image of subject, adjective, doing action, details. 
+    The image description should match the specified genre ${genre} and style: ${style}.
+    ${characters ? `Include the characters' appearance and names as specified in this JSON: ${JSON.stringify(characters)} when referring to the characters. ` : ""}
+    You should only output a valid raw json in the format of [{sectionContent, imagePrompt}] 
+    `,
     };
-    if (messages.length > 10) {
-      messages = [
-        systemMessage,
-        ...messages.slice(Math.max(messages.length - 5, 0)),
-      ];
-    }
-    messages.push(prompt);
+    let messages = [prompt];
 
-    const message = await generateTextOpenAI(messages, "ollama", "llama3");
-    scenePrompts.push(message.content + `, ${style} style`);
+    let message = undefined;
+    let generated = false;
+    let currentRetry = 0;
+
+    while (currentRetry < retry) {
+      try {
+        const regex = /\[[\s\S]{10,}\]/gm;
+        message = await generateTextOpenAI(messages, "ollama", "llama3");
+        console.log(message.content);
+        const matches = message.content.match(regex);
+        if (matches && matches.length > 0) {
+          const parsed = JSON.parse(matches[0]);
+          if (
+            parsed.length &&
+            parsed.every(
+              (object) => object.sectionContent && object.imagePrompt
+            )
+          ) {
+            scenePrompts.push(...parsed);
+            generated = true;
+            break;
+          }
+        }
+        currentRetry++;
+      } catch (ex) {
+        console.log("Error creating story lines", ex);
+        currentRetry++;
+      }
+    }
+
+    if (!generated) {
+      throw "Error creating story lines";
+    }
     messages.push(message);
   }
 
-  return scenePrompts;
+  return scenePrompts.map((scenePrompt) => ({
+    content: scenePrompt.sectionContent,
+    sceneImagePrompt: scenePrompt.imagePrompt,
+  }));
 }
 
 async function generateStoryContentByCharactor(content, characters) {
