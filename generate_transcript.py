@@ -7,8 +7,7 @@ if sys.argv[1] is None or sys.argv[2] is None:
 
 with open(sys.argv[1], "r", encoding="utf8") as file:
     audioFiles = json.load(file)
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model = whisper.load_model("small", download_root="F:/cache/whisper").to(device)
+    model = whisper.load_model("small", download_root="F:/cache/whisper").to("cuda:1")
     transcriptions = []
     for audioFile in audioFiles:
         result = model.transcribe(audioFile, word_timestamps=True)

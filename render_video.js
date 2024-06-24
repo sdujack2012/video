@@ -2,14 +2,10 @@ const fs = require("fs");
 const path = require("path");
 const { createFolderIfNotExist, splitArrayIntoChunks } = require("./utils");
 const util = require("util");
+const { observable, when, runInAction } = require("mobx");
 const exec = util.promisify(require("child_process").exec);
 const { getAudioDurationInSeconds } = require("get-audio-duration");
 const { createCanvas, loadImage, registerFont } = require("canvas");
-const {
-  asyncParallelForEach,
-  BACK_OFF_RETRY,
-} = require("async-parallel-foreach");
-
 const { batchGenerateTranscripts } = require("./resources_utils");
 const {
   sizeMapping,
@@ -22,6 +18,7 @@ const {
   framerate,
   transitionDuration,
   audioFadeOutDuration,
+  numGPUs,
 } = require("./config");
 
 async function renderVideo(topic) {
@@ -54,33 +51,50 @@ async function renderVideo(topic) {
   );
 
   // Render each video clip concurrently
-  const processLimit = 7;
-  await asyncParallelForEach(
-    videoConfigClips.toSorted((a, b) => (a.duration - b.duration > 0 ? 1 : -1)),
-    processLimit,
-    async (videoConfigClip, index) => {
-      const mergedVideoPath = path.resolve(
-        storyTempFolder,
-        `temp_merged_video_${index + 1}.mkv`
-      );
-      console.log(`Rendering clip ${index + 1}/${videoConfigClips.length}`);
+
+  const gpus = observable([
+    { limit: 3, current: 0 },
+    { limit: 4, current: 0 },
+  ]);
+  const rendingClipPromises = [];
+  for (let index = 0; index < videoConfigClips.length; index++) {
+    await when(() => gpus.some((gpu) => gpu.limit > gpu.current));
+    const availableGpu = gpus.findIndex((gpu) => gpu.limit > gpu.current);
+    const mergedVideoPath = path.resolve(
+      storyTempFolder,
+      `temp_merged_video_${index + 1}.mkv`
+    );
+    console.log(
+      `Rendering clip ${index + 1}/${videoConfigClips.length} using gpu ${availableGpu}`
+    );
+    const videoConfigClip = videoConfigClips[index];
+    runInAction(() => {
+      gpus[availableGpu].current++;
+    });
+    const createCurrentRenderingPromise = async () => {
       try {
         await renderVideoClipConfig(
           videoConfigClip,
           screenSize,
           mergedVideoPath,
-          framerate
+          framerate,
+          availableGpu
         );
       } catch (ex) {
         console.log(ex);
         throw ex;
       }
-    },
-    {
-      times: 1, // try at most 10 times
-      interval: BACK_OFF_RETRY.exponential(),
-    }
-  );
+    };
+
+    rendingClipPromises.push(
+      createCurrentRenderingPromise().then(() =>
+        runInAction(() => {
+          gpus[availableGpu].current--;
+        })
+      )
+    );
+  }
+  await Promise.all(rendingClipPromises);
 
   // Generate videos based on videoConfigClips by chunks to avoid ffmpng commands being too long
   const audioVideoPaths = [];
@@ -92,31 +106,47 @@ async function renderVideo(topic) {
     chunkSplitLimit
   );
   console.log(`Creating video chunk`);
-  await asyncParallelForEach(
-    videoConfigClipChunks,
-    5,
-    async (videoConfigClipChunk, index) => {
-      console.log(
-        `Creating video chunk ${index + 1}/${videoConfigClipChunks.length}`
-      );
 
-      const audioVideoPath = path.resolve(
-        storyTempFolder,
-        `video_audio_${index}.mkv`
-      );
+  const rendingClipChunkPromises = [];
+  for (let index = 0; index < videoConfigClipChunks.length; index++) {
+    await when(() => gpus.some((gpu) => gpu.limit > gpu.current));
+    const availableGpu = gpus.findIndex((gpu) => gpu.limit > gpu.current);
+    console.log(
+      `Creating video chunk ${index + 1}/${videoConfigClipChunks.length} using gpuy ${availableGpu}`
+    );
+
+    const audioVideoPath = path.resolve(
+      storyTempFolder,
+      `video_audio_${index}.mkv`
+    );
+    const createCurrentRenderingPromise = async () => {
       try {
-        await renderVideoClipChunk(videoConfigClipChunk, audioVideoPath);
+        await renderVideoClipChunk(
+          videoConfigClipChunk,
+          audioVideoPath,
+          availableGpu
+        );
         audioVideoPaths[index] = audioVideoPath;
       } catch (ex) {
         console.log(ex);
         throw ex;
       }
-    },
-    {
-      times: 1, // try at most 10 times
-      interval: BACK_OFF_RETRY.randomBetween(1, 1),
-    }
-  );
+    };
+
+    const videoConfigClipChunk = videoConfigClipChunks[index];
+    runInAction(() => {
+      gpus[availableGpu].current++;
+    });
+
+    rendingClipChunkPromises.push(
+      createCurrentRenderingPromise().then(() =>
+        runInAction(() => {
+          gpus[availableGpu].current--;
+        })
+      )
+    );
+  }
+  await Promise.all(rendingClipChunkPromises);
 
   // merge video_aduio chunchs
   console.log(`Merging video with audio`);
@@ -177,7 +207,7 @@ async function renderVideo(topic) {
   console.log("time elapsed:", (Date.now() - current) / 60000);
 }
 
-async function renderVideoClipChunk(videoConfigClipChunk, outputFilePath) {
+async function renderVideoClipChunk(videoConfigClipChunk, outputFilePath, gpu) {
   const xfadeEffects = [
     "fade",
     "wipeleft",
@@ -285,12 +315,18 @@ async function renderVideoClipChunk(videoConfigClipChunk, outputFilePath) {
 
   // join video with audio
   await exec(
-    `ffmpeg ${videoInputString} -filter_complex "${audioTransitions}${videoTransitions}" -map "[video]" -map [audio] -c:a aac -c:v h264_nvenc -preset p6 -y "${outputFilePath}"`
+    `ffmpeg -hwaccel_device ${gpu} -hwaccel cuda ${videoInputString} -filter_complex "${audioTransitions}${videoTransitions}" -map "[video]" -map [audio] -c:a aac -c:v h264_nvenc -preset p6 -y "${outputFilePath}"`
   );
   return outputFilePath;
 }
 
-async function renderVideoClipConfig(videoConfigClip, screenSize, filePath) {
+async function renderVideoClipConfig(
+  videoConfigClip,
+  screenSize,
+  filePath,
+  framerate,
+  availableGpu
+) {
   const audioConfig = videoConfigClip.audioConfig;
   const videoDuration = videoConfigClip.duration;
   let silencePaddingAfter =
@@ -299,7 +335,7 @@ async function renderVideoClipConfig(videoConfigClip, screenSize, filePath) {
   const audioInput = `-f lavfi -t "${audioConfig.startTime}" -i anullsrc=channel_layout=stereo:sample_rate=44100 -i "${audioConfig.filePath}" -t "${audioConfig.duration}" -f lavfi -t "${silencePaddingAfter.toFixed(2)}" -i anullsrc=channel_layout=stereo:sample_rate=44100`;
   const videopInput = `-loop 1 -framerate ${framerate} -i "${videoConfigClip.clipImage.filePath}" -t "${videoDuration}"`;
   await exec(
-    `ffmpeg  ${videopInput} ${audioInput}  \
+    `ffmpeg -hwaccel_device ${availableGpu} -hwaccel cuda ${videopInput} ${audioInput}  \
     -filter_complex "[0:v]${createVideoEffect(videoConfigClip, framerate, screenSize)}[v];[1:a][2:a][3:a]concat=n=3:v=0:a=1[a]" \
     -shortest -pix_fmt yuv420p -c:v h264_nvenc -c:a aac -map "[v]" -map "[a]" -preset p6 -y "${filePath}"`
   );

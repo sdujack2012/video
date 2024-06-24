@@ -41,11 +41,12 @@ const subtitleFontSizes = {
   short: 20,
 };
 
-const clipGappingTime = 0.5;
+const clipGappingTime = 0.1;
 const framerate = 60;
-const transitionDuration = 1;
-const audioFadeOutDuration = 3;
+const transitionDuration = 0.5;
+const audioFadeOutDuration = 0.5;
 
+const numGPUs = 2;
 module.exports = {
   sizeMapping,
   lineLengthMappings,
@@ -59,4 +60,5 @@ module.exports = {
   framerate,
   audioFadeOutDuration,
   transitionDuration,
+  numGPUs,
 };
