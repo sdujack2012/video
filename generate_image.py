@@ -21,7 +21,13 @@ with open(sys.argv[1], "r") as file:
     with torch.inference_mode():
         for imageInfo in imageInfos:
             conditioning, pooled = compel(imageInfo["prompt"])
-            image = pipeline(prompt_embeds=conditioning, pooled_prompt_embeds=pooled, num_inference_steps=30,  height=imageInfo["height"], width=imageInfo["width"]).images[0]
+            image = pipeline(
+                prompt_embeds=conditioning, 
+                pooled_prompt_embeds=pooled, 
+                negative_prompt="ugly, tiling, poorly drawn hands, poorly drawn feet, poorly drawn face, out of frame, extra limbs, disfigured, deformed, body out of frame, bad anatomy, watermark, signature, cut off, low contrast, underexposed, overexposed, bad art, beginner, amateur, distorted face",
+                num_inference_steps=30,  
+                height=imageInfo["height"], 
+                width=imageInfo["width"]).images[0]
             image.save(imageInfo["outputFile"])
 
 

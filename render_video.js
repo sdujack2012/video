@@ -438,18 +438,23 @@ async function addTitleToCoverImage(story, screenSize, storyTempFolder) {
   ctx.drawImage(coverImage, 0, 0, canvas.width, canvas.height);
   ctx.font = `60px "Title font"`;
   ctx.fillStyle = titleFontColor;
-  const titleWidth = ctx.measureText(story.title).width;
-  const titleSegments = [];
+  let titleSegments = [story.title];
 
-  if (titleWidth > canvas.width) {
+  let currentSplitCount = 1;
+  while (
+    titleSegments
+      .map((titleSegment) => ctx.measureText(titleSegment).width)
+      .some((width) => width > canvas.width)
+  ) {
+    titleSegments = [];
+    currentSplitCount++;
     const titleparts = story.title.split(" ");
-    const chunkSize = titleparts.length / Math.ceil(titleWidth / canvas.width);
+    const chunkSize = titleparts.length / currentSplitCount;
     for (let i = 0; i < titleparts.length; i += chunkSize) {
       titleSegments.push(titleparts.slice(i, i + chunkSize).join(" "));
     }
-  } else {
-    titleSegments.push(story.title);
   }
+
   let currentY = 0;
   for (let titleSegment of titleSegments) {
     const title = titleSegment;
@@ -472,7 +477,7 @@ async function addTitleToCoverImage(story, screenSize, storyTempFolder) {
 
 function createVideoEffect(videoConfigClip, framerate, screenSize) {
   const zoomInRate = 0.0005;
-  const scaleFactor = 1.3;
+  const scaleFactor = 1.2;
   const scaledWidth = Math.floor(screenSize.width * scaleFactor);
   const scaledHeight = Math.floor(screenSize.height * scaleFactor);
 
@@ -584,3 +589,4 @@ if (require.main === module && process.argv[2]) {
 }
 
 exports.renderVideo = renderVideo;
+exports.createVideoClipConfigs = createVideoClipConfigs;

@@ -2,8 +2,14 @@ const fs = require("fs");
 const path = require("path");
 const axios = require("axios");
 const OpenAI = require("openai");
-const { executeExternalHelper, splitArrayIntoChunks } = require("./utils");
-
+const { stringSimilarity } = require("string-similarity-js");
+const {
+  executeExternalHelper,
+  splitArrayIntoChunks,
+  createFolderIfNotExist,
+} = require("./utils");
+const util = require("util");
+const exec = util.promisify(require("child_process").exec);
 const { ComfyUIClient } = require("comfy-ui-client");
 async function generateTextOpenAI(messages, provider, model) {
   const apiKeys = JSON.parse(fs.readFileSync("./apikey.json", "utf8"));
@@ -252,38 +258,69 @@ Please write a Stable Diffusion prompt to create a cover image for the following
 }
 
 async function generateContinousStoryScenePrompts(
+  title,
   sceneDescriptions,
   genre,
   style,
   characters
 ) {
   console.log("Batch Generating scene prompts");
+  const tempFolder = createFolderIfNotExist("temp", title);
+  const cacheFile = path.resolve(tempFolder, "image_prompts_cache.json");
 
-  const splitLimit = 10;
+  const cache = fs.existsSync(cacheFile)
+    ? JSON.parse(fs.readFileSync(cacheFile, "utf8"))
+    : null;
+
+  const scenePrompts = cache ? cache.scenePrompts : [];
+  let index = cache ? cache.index + 1 : 0;
+  let messages = cache ? cache.messages : [];
+  const splitLimit = cache ? cache.splitLimit : 5;
   const sceneDescriptionChunks = splitArrayIntoChunks(
     sceneDescriptions,
     splitLimit
   );
-
-  const scenePrompts = [];
-
-  const retry = 10;
+  const retry = 30;
   //const message = await generateText(messages);
-
-  for (let sceneDescriptionChunk of sceneDescriptionChunks) {
-    const prompt = {
-      role: "user",
-      content: `
-    Split the following story ${sceneDescriptionChunk.join("\n ")} into around ${sceneDescriptionChunk.length} sections. 
-    Please include all the text from the story 
-    Then for each section create an image decription to capture the essence of the scene using very concise language.
-    The image decription should follow the following formula: An image of subject, adjective, doing action, details. 
+  for (; index < sceneDescriptionChunks.length; index++) {
+    console.log(
+      `##############Creating scene prompts for chunk ${index + 1}/${sceneDescriptionChunks.length}`
+    );
+    const sceneDescriptionChunk = sceneDescriptionChunks[index];
+    const promptText =
+      sceneDescriptions.length < 10
+        ? `
+    Below is a sequence of continuous segments from a story, formatted as a JSON array, with the imagePrompt field currently empty:
+    ***
+    ${JSON.stringify(sceneDescriptionChunk.map((sceneDescription) => ({ segment: sceneDescription, imagePrompt: null })))}
+    *** 
+    As you can see the imagePrompt attibutes are empty
+    Keep each of the segment original and fill the imagePrompt to capture the essence of the scence described by the segment.
+    The image prompt should follow the following formula: An image of subject, adjective, doing action, additional details. 
+    The image prompt should consider the context of other segements
     The image description should match the specified genre ${genre} and style: ${style}.
     ${characters ? `Include the characters' appearance and names as specified in this JSON: ${JSON.stringify(characters)} when referring to the characters. ` : ""}
-    You should only output a valid raw json in the format of [{sectionContent, imagePrompt}] 
-    `,
+    You should only output a valid raw json in the format of [{segment: string, imagePrompt: string}].
+    `
+        : `
+    Below is one segment from a story. Split them into about ${sceneDescriptionChunk.length} smaller segments and create image prompt to capture the essence of the scence for each of the segments
+    ***
+    ${sceneDescriptionChunk.join("\n")}
+    ***
+    The image prompt should follow the following formula: An image of subject, adjective, doing action, additional details. 
+    The image prompt should consider the context of other segements
+    The image description should match the specified genre ${genre} and style: ${style}.
+    ${characters ? `Include the characters' appearance and names as specified in this JSON: ${JSON.stringify(characters)} when referring to the characters. ` : ""}
+    You should only output a valid raw json in the format of [{segment: string, imagePrompt: string}].
+    `;
+    const prompt = {
+      role: "user",
+      content: promptText,
     };
-    let messages = [prompt];
+    if (messages.length > 5) {
+      messages = messages.slice(Math.max(messages.length - 3, 0));
+    }
+    messages.push(prompt);
 
     let message = undefined;
     let generated = false;
@@ -292,25 +329,40 @@ async function generateContinousStoryScenePrompts(
     while (currentRetry < retry) {
       try {
         const regex = /\[[\s\S]{10,}\]/gm;
-        message = await generateTextOpenAI(messages, "ollama", "llama3");
-        console.log(message.content);
+        message = await generateTextOpenAI(messages, "ollama", "yi:34b");
         const matches = message.content.match(regex);
         if (matches && matches.length > 0) {
           const parsed = JSON.parse(matches[0]);
-          if (
-            parsed.length &&
-            parsed.every(
-              (object) => object.sectionContent && object.imagePrompt
-            )
-          ) {
+          const storyUntouched =
+            sceneDescriptions.length < 10
+              ? sceneDescriptionChunk.length === parsed.length &&
+                sceneDescriptionChunk.every((sceneDescription, index) =>
+                  stringSimilarity(sceneDescription, parsed[index].segment)
+                ) > 0.8
+              : stringSimilarity(
+                  sceneDescriptionChunk.join("\n"),
+                  parsed.map((object) => object.segment).join("\n")
+                ) > 0.8;
+
+          if (storyUntouched && parsed.every((object) => object.imagePrompt)) {
             scenePrompts.push(...parsed);
+            messages.push(message);
+            fs.writeFileSync(
+              cacheFile,
+              JSON.stringify({
+                messages,
+                scenePrompts,
+                index,
+                splitLimit,
+              })
+            );
             generated = true;
             break;
           }
         }
         currentRetry++;
       } catch (ex) {
-        console.log("Error creating story lines", ex);
+        console.log(ex);
         currentRetry++;
       }
     }
@@ -318,11 +370,10 @@ async function generateContinousStoryScenePrompts(
     if (!generated) {
       throw "Error creating story lines";
     }
-    messages.push(message);
   }
-
+  fs.unlinkSync(cacheFile);
   return scenePrompts.map((scenePrompt) => ({
-    content: scenePrompt.sectionContent,
+    content: scenePrompt.segment,
     sceneImagePrompt: scenePrompt.imagePrompt,
   }));
 }
@@ -477,6 +528,14 @@ async function extractCharactersFromStory(content) {
   return JSON.parse(json);
 }
 
+async function speedUpAudio(audioFilePath, speedFactor) {
+  const outputFile = audioFilePath.replace(".mp3", "_speedup.mp3");
+  await exec(
+    `ffmpeg -i "${audioFilePath}" -filter_complex "[0]atempo=${speedFactor}[a]" -map "[a]" -y "${outputFile}"`
+  );
+  return outputFile;
+}
+
 exports.batchGenerateImagesByPrompts = batchGenerateImagesByPrompts;
 exports.batchGenerateAudios = batchGenerateAudios;
 exports.batchGenerateTranscripts = batchGenerateTranscripts;
@@ -484,4 +543,5 @@ exports.generateContinousStoryScenePrompts = generateContinousStoryScenePrompts;
 exports.generateStoryContentByCharactor = generateStoryContentByCharactor;
 exports.extractCharactersFromStory = extractCharactersFromStory;
 exports.generateStoryCoverPrompt = generateStoryCoverPrompt;
+exports.speedUpAudio = speedUpAudio;
 exports.freeVRams = freeVRams;

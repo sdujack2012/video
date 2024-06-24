@@ -26,6 +26,7 @@
     "openai": "^4.44.0",
     "prettier": "^3.2.5",
     "socket.engine": "^1.0.0",
+    "string-similarity-js": "^2.1.4",
     "tree-kill": "^1.2.2"
   }
 }

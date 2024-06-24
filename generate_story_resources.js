@@ -8,10 +8,11 @@ const {
   generateContinousStoryScenePrompts,
   generateStoryContentByCharactor,
   extractCharactersFromStory,
+  speedUpAudio,
   freeVRams,
 } = require("./resources_utils");
 const { getAudioDurationInSeconds } = require("get-audio-duration");
-
+const { createVideoClipConfigs } = require("./render_video");
 async function generateScenes(title) {
   const storyFolder = createFolderIfNotExist("short_story", title);
   const storyJsonPath = path.resolve(storyFolder, "story.json");
@@ -64,12 +65,12 @@ async function generateScenes(title) {
 }
 
 function splitLongTextIntoChunks(content) {
-  const tokenLimit = 40;
+  const tokenLimit = 20;
   const maxToken = 200;
 
   const absoluteSeparators = ["***"];
-  const relativeSeparators = ["\n", ".", "?", "!", ";"];
-
+  const relativeSeparators = [".", "?", "!", ";"];
+  content = content.replace(/\n{1,}/gm, ".");
   const splitContentIntoChunks = (contentToSplit, separator) => {
     if (contentToSplit.split(" ").length <= tokenLimit) {
       return [contentToSplit];
@@ -236,19 +237,35 @@ async function generateStoryAudios(title) {
   }
 
   await batchGenerateAudios(audioFileInfosToCreate);
+  if (story.speedFactor) {
+    story.titleAudio = await speedUpAudio(story.titleAudio, story.speedFactor);
+    for (let contentChunk of story.contentChunks) {
+      contentChunk.audioFile = await speedUpAudio(
+        contentChunk.audioFile,
+        story.speedFactor
+      );
+    }
+  }
+
   story.hasAudios = true;
   story.titleAudioDuration =
     story.titleAudioDuration ||
     (await getAudioDurationInSeconds(story.titleAudio));
-  let totalDuration = story.titleAudioDuration;
 
   for (let contentChunk of story.contentChunks) {
-    contentChunk.audioDuration =
-      contentChunk.audioDuration ||
-      (await getAudioDurationInSeconds(contentChunk.audioFile));
-    totalDuration += contentChunk.audioDuration;
+    contentChunk.audioDuration = await getAudioDurationInSeconds(
+      contentChunk.audioFile
+    );
   }
-  story.videoType = totalDuration > 54 ? "standard" : "short";
+
+  const videoClips = await createVideoClipConfigs(story, story.coverImageFile);
+
+  story.estimatedDuration = videoClips.reduce(
+    (totalDuration, videoClip) => videoClip.duration + totalDuration,
+    0
+  );
+
+  story.videoType = story.estimatedDuration > 60 ? "standard" : "short";
   fs.writeFileSync(storyJsonPath, JSON.stringify(story, null, 4));
 }
 
@@ -314,6 +331,7 @@ async function generateScenePrompts(title) {
   if (!story.coverImagePrompt) {
     story.coverImagePrompt = (
       await generateContinousStoryScenePrompts(
+        story.title,
         [
           story.contentChunks
             .slice(0, 10)
@@ -339,6 +357,7 @@ async function generateScenePrompts(title) {
   );
 
   story.contentChunks = await generateContinousStoryScenePrompts(
+    story.title,
     sceneDescriptions,
     story.genre,
     story.style,
