@@ -12,13 +12,15 @@ const {
 } = require("./generate_story_resources");
 const { renderVideo } = require("./render_video");
 
-async function createShortStories() {
+async function createShortStories(storyTitle) {
   const storiesPath = path.resolve("stories.json");
-  const stories = JSON.parse(fs.readFileSync(storiesPath, "utf8"));
-  console.log(stories);
+  let stories = JSON.parse(fs.readFileSync(storiesPath, "utf8"));
+  stories = storyTitle
+    ? stories.filter((story) => story.title === storyTitle)
+    : stories;
   const storiesToCreate = [];
   for (let story of stories) {
-    const storyFolder = createFolderIfNotExist("short_story", story.title);
+    const storyFolder = createFolderIfNotExist("G:/videos", story.title);
     const storyJsonPath = path.resolve(storyFolder, "story.json");
     if (!fs.existsSync(storyJsonPath)) {
       fs.writeFileSync(storyJsonPath, JSON.stringify(story, null, 4));
@@ -44,5 +46,5 @@ async function createShortStories() {
 }
 
 if (require.main === module) {
-  createShortStories();
+  createShortStories(process.argv[2]);
 }

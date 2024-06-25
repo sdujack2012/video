@@ -14,7 +14,7 @@ const {
 const { getAudioDurationInSeconds } = require("get-audio-duration");
 const { createVideoClipConfigs } = require("./render_video");
 async function generateScenes(title) {
-  const storyFolder = createFolderIfNotExist("short_story", title);
+  const storyFolder = createFolderIfNotExist("G:/videos", title);
   const storyJsonPath = path.resolve(storyFolder, "story.json");
   const storyImageFolder = createFolderIfNotExist(storyFolder, "images");
   const sizeMapping = {
@@ -193,7 +193,7 @@ function assignVoicesForCharacters(characters) {
 }
 
 async function generateStoryAudios(title) {
-  const storyFolder = createFolderIfNotExist("short_story", title);
+  const storyFolder = createFolderIfNotExist("G:/videos", title);
   const storyJsonPath = path.resolve(storyFolder, "story.json");
   const storyAudioFolder = createFolderIfNotExist(storyFolder, "aduios");
 
@@ -270,7 +270,7 @@ async function generateStoryAudios(title) {
 }
 
 async function splitStoryIntoChunks(title) {
-  const storyFolder = createFolderIfNotExist("short_story", title);
+  const storyFolder = createFolderIfNotExist("G:/videos", title);
   const storyJsonPath = path.resolve(storyFolder, "story.json");
   const story = JSON.parse(fs.readFileSync(storyJsonPath, "utf8"));
 
@@ -304,7 +304,7 @@ async function splitStoryIntoChunks(title) {
 }
 
 async function generateTranscript(title) {
-  const storyFolder = createFolderIfNotExist("short_story", title);
+  const storyFolder = createFolderIfNotExist("G:/videos", title);
   const storyJsonPath = path.resolve(storyFolder, "story.json");
   const story = JSON.parse(fs.readFileSync(storyJsonPath, "utf8"));
   if (story.hasTranscripts) {
@@ -325,7 +325,7 @@ async function generateTranscript(title) {
 }
 
 async function generateScenePrompts(title) {
-  const storyFolder = createFolderIfNotExist("short_story", title);
+  const storyFolder = createFolderIfNotExist("G:/videos", title);
   const storyJsonPath = path.resolve(storyFolder, "story.json");
   const story = JSON.parse(fs.readFileSync(storyJsonPath, "utf8"));
   if (!story.coverImagePrompt) {

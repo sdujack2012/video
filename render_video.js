@@ -18,12 +18,11 @@ const {
   framerate,
   transitionDuration,
   audioFadeOutDuration,
-  numGPUs,
 } = require("./config");
 
 async function renderVideo(topic) {
   const current = Date.now();
-  const storyFolder = createFolderIfNotExist("short_story", topic);
+  const storyFolder = createFolderIfNotExist("G:/videos", topic);
   const storyVideoFolder = createFolderIfNotExist(storyFolder, "videos");
   const storyTempFolder = createFolderIfNotExist(storyVideoFolder, "temp");
   const storyJsonPath = path.resolve(storyFolder, "story.json");
@@ -203,7 +202,7 @@ async function renderVideo(topic) {
   story.hasVideo = true;
 
   fs.writeFileSync(storyJsonPath, JSON.stringify(story, null, 4));
-
+  await exec(`rmdir /s /Q "${storyTempFolder}"`);
   console.log("time elapsed:", (Date.now() - current) / 60000);
 }
 
