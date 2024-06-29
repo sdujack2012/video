@@ -20,7 +20,10 @@ async function createShortStories(storyTitle) {
     : stories;
   const storiesToCreate = [];
   for (let story of stories) {
-    const storyFolder = createFolderIfNotExist("G:/videos", story.title);
+    const storyFolder = createFolderIfNotExist(
+      "E:/story video/videos",
+      story.title
+    );
     const storyJsonPath = path.resolve(storyFolder, "story.json");
     if (!fs.existsSync(storyJsonPath)) {
       fs.writeFileSync(storyJsonPath, JSON.stringify(story, null, 4));

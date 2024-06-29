@@ -14,7 +14,7 @@ const {
 const { getAudioDurationInSeconds } = require("get-audio-duration");
 const { createVideoClipConfigs } = require("./render_video");
 async function generateScenes(title) {
-  const storyFolder = createFolderIfNotExist("G:/videos", title);
+  const storyFolder = createFolderIfNotExist("E:/story video/videos", title);
   const storyJsonPath = path.resolve(storyFolder, "story.json");
   const storyImageFolder = createFolderIfNotExist(storyFolder, "images");
   const sizeMapping = {
@@ -65,12 +65,12 @@ async function generateScenes(title) {
 }
 
 function splitLongTextIntoChunks(content) {
-  const tokenLimit = 20;
+  const tokenLimit = 40;
   const maxToken = 200;
 
   const absoluteSeparators = ["***"];
-  const relativeSeparators = [".", "?", "!", ";"];
-  content = content.replace(/\n{1,}/gm, ".");
+  const relativeSeparators = ["\n", ".", "?", "!", ";"];
+  content = content.replace(/\n{1,}/gm, "\n");
   const splitContentIntoChunks = (contentToSplit, separator) => {
     if (contentToSplit.split(" ").length <= tokenLimit) {
       return [contentToSplit];
@@ -90,12 +90,14 @@ function splitLongTextIntoChunks(content) {
       const chunkToMerge = restchunksToMerge[index];
       if (
         currentChunk.split(" ").length + chunkToMerge.split(" ").length >
-        tokenLimit
+          tokenLimit &&
+        currentChunk.split(" ").length > 6
       ) {
-        chunks[chunks.length - 1] += separator;
+        chunks[chunks.length - 1] =
+          chunks[chunks.length - 1].trim() + separator;
         chunks.push(chunkToMerge);
       } else {
-        chunks[chunks.length - 1] += separator + chunkToMerge;
+        chunks[chunks.length - 1] += separator + chunkToMerge.trim();
       }
     }
     return chunks;
@@ -122,7 +124,6 @@ function splitLongTextIntoChunks(content) {
 
   let longChunk = chunks.find((chunk) => chunk.split(" ").length > maxToken);
 
-  if (longChunk) throw `Too long: ${longChunk}`;
   return chunks;
 }
 
@@ -193,7 +194,7 @@ function assignVoicesForCharacters(characters) {
 }
 
 async function generateStoryAudios(title) {
-  const storyFolder = createFolderIfNotExist("G:/videos", title);
+  const storyFolder = createFolderIfNotExist("E:/story video/videos", title);
   const storyJsonPath = path.resolve(storyFolder, "story.json");
   const storyAudioFolder = createFolderIfNotExist(storyFolder, "aduios");
 
@@ -270,7 +271,7 @@ async function generateStoryAudios(title) {
 }
 
 async function splitStoryIntoChunks(title) {
-  const storyFolder = createFolderIfNotExist("G:/videos", title);
+  const storyFolder = createFolderIfNotExist("E:/story video/videos", title);
   const storyJsonPath = path.resolve(storyFolder, "story.json");
   const story = JSON.parse(fs.readFileSync(storyJsonPath, "utf8"));
 
@@ -280,7 +281,9 @@ async function splitStoryIntoChunks(title) {
   }
 
   if (story.enableRoles) {
-    story.characters = await extractCharactersFromStory(story.content);
+    story.characters =
+      story.characters || (await extractCharactersFromStory(story.content));
+    fs.writeFileSync(storyJsonPath, JSON.stringify(story, null, 4));
     story.contentChunks = await generateStoryContentByCharactor(
       story.content,
       story.characters
@@ -304,7 +307,7 @@ async function splitStoryIntoChunks(title) {
 }
 
 async function generateTranscript(title) {
-  const storyFolder = createFolderIfNotExist("G:/videos", title);
+  const storyFolder = createFolderIfNotExist("E:/story video/videos", title);
   const storyJsonPath = path.resolve(storyFolder, "story.json");
   const story = JSON.parse(fs.readFileSync(storyJsonPath, "utf8"));
   if (story.hasTranscripts) {
@@ -325,7 +328,7 @@ async function generateTranscript(title) {
 }
 
 async function generateScenePrompts(title) {
-  const storyFolder = createFolderIfNotExist("G:/videos", title);
+  const storyFolder = createFolderIfNotExist("E:/story video/videos", title);
   const storyJsonPath = path.resolve(storyFolder, "story.json");
   const story = JSON.parse(fs.readFileSync(storyJsonPath, "utf8"));
   if (!story.coverImagePrompt) {

@@ -22,7 +22,7 @@ const {
 
 async function renderVideo(topic) {
   const current = Date.now();
-  const storyFolder = createFolderIfNotExist("G:/videos", topic);
+  const storyFolder = createFolderIfNotExist("E:/story video/videos", topic);
   const storyVideoFolder = createFolderIfNotExist(storyFolder, "videos");
   const storyTempFolder = createFolderIfNotExist(storyVideoFolder, "temp");
   const storyJsonPath = path.resolve(storyFolder, "story.json");
@@ -53,7 +53,7 @@ async function renderVideo(topic) {
 
   const gpus = observable([
     { limit: 3, current: 0 },
-    { limit: 4, current: 0 },
+    { limit: 3, current: 0 },
   ]);
   const rendingClipPromises = [];
   for (let index = 0; index < videoConfigClips.length; index++) {
@@ -111,7 +111,7 @@ async function renderVideo(topic) {
     await when(() => gpus.some((gpu) => gpu.limit > gpu.current));
     const availableGpu = gpus.findIndex((gpu) => gpu.limit > gpu.current);
     console.log(
-      `Creating video chunk ${index + 1}/${videoConfigClipChunks.length} using gpuy ${availableGpu}`
+      `Creating video chunk ${index + 1}/${videoConfigClipChunks.length} using gpu ${availableGpu}`
     );
 
     const audioVideoPath = path.resolve(
@@ -272,7 +272,10 @@ async function renderVideoClipChunk(videoConfigClipChunk, outputFilePath, gpu) {
   let previousOffset = 0;
 
   const videoInputString = videoConfigClipChunk
-    .map((videoConfigClip) => `-i "${videoConfigClip.videoFilePath}"`)
+    .map(
+      (videoConfigClip) =>
+        `-c:v h264_cuvid -i "${videoConfigClip.videoFilePath}"`
+    )
     .join(" ");
   const videoTransitions = videoConfigClipChunk
     .map((videoConfigClip, index) => {
@@ -314,7 +317,7 @@ async function renderVideoClipChunk(videoConfigClipChunk, outputFilePath, gpu) {
 
   // join video with audio
   await exec(
-    `ffmpeg -hwaccel_device ${gpu} -hwaccel cuda ${videoInputString} -filter_complex "${audioTransitions}${videoTransitions}" -map "[video]" -map [audio] -c:a aac -c:v h264_nvenc -preset p6 -y "${outputFilePath}"`
+    `ffmpeg -threads 1 -hwaccel_device ${gpu} -hwaccel cuda ${videoInputString} -filter_complex "${audioTransitions}${videoTransitions}" -map "[video]" -map [audio] -c:a aac -c:v h264_nvenc -preset p6 -y "${outputFilePath}"`
   );
   return outputFilePath;
 }
@@ -334,7 +337,7 @@ async function renderVideoClipConfig(
   const audioInput = `-f lavfi -t "${audioConfig.startTime}" -i anullsrc=channel_layout=stereo:sample_rate=44100 -i "${audioConfig.filePath}" -t "${audioConfig.duration}" -f lavfi -t "${silencePaddingAfter.toFixed(2)}" -i anullsrc=channel_layout=stereo:sample_rate=44100`;
   const videopInput = `-loop 1 -framerate ${framerate} -i "${videoConfigClip.clipImage.filePath}" -t "${videoDuration}"`;
   await exec(
-    `ffmpeg -hwaccel_device ${availableGpu} -hwaccel cuda ${videopInput} ${audioInput}  \
+    `ffmpeg -threads 1 -hwaccel_device ${availableGpu} -hwaccel cuda ${videopInput} ${audioInput}  \
     -filter_complex "[0:v]${createVideoEffect(videoConfigClip, framerate, screenSize)}[v];[1:a][2:a][3:a]concat=n=3:v=0:a=1[a]" \
     -shortest -pix_fmt yuv420p -c:v h264_nvenc -c:a aac -map "[v]" -map "[a]" -preset p6 -y "${filePath}"`
   );

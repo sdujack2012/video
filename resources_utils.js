@@ -42,7 +42,7 @@ async function generateTextOpenAI(messages, provider, model) {
 async function freeVRams() {
   await axios.post(
     "http://localhost:11434/api/generate",
-    '{"model": "llama3", "keep_alive": 0}',
+    '{"model": "yi:34b", "keep_alive": 0}',
     {
       headers: {
         "Content-Type": "application/x-www-form-urlencoded",
@@ -92,25 +92,25 @@ async function batchGenerateImagesComfyUI(imagePromptDetails) {
     // workflow["5"]["inputs"]["width"] = imagePromptDetail.width;
     // workflow["5"]["inputs"]["height"] = imagePromptDetail.height;
 
-    // const workflow = JSON.parse(
-    //   fs.readFileSync("E:/story video/comfyUI workflows/sd3.json")
-    // );
-    // workflow["3"]["inputs"]["seed"] = Math.floor(Math.random() * 4294967294);
-    // workflow["6"]["inputs"]["text"] =
-    //   "master piece, 8k" + imagePromptDetail.prompt;
-    // workflow["5"]["inputs"]["width"] = imagePromptDetail.width;
-    // workflow["5"]["inputs"]["height"] = imagePromptDetail.height;
-
     const workflow = JSON.parse(
-      fs.readFileSync(
-        "E:/story video/comfyUI workflows/sdxl_lightning_workflow_full.json"
-      )
+      fs.readFileSync("E:/story video/comfyUI workflows/sd3.json")
     );
     workflow["3"]["inputs"]["seed"] = Math.floor(Math.random() * 4294967294);
     workflow["6"]["inputs"]["text"] =
-      "master piece, digital art" + imagePromptDetail.prompt;
+      "digital art, master piece, 8k" + imagePromptDetail.prompt;
     workflow["5"]["inputs"]["width"] = imagePromptDetail.width;
     workflow["5"]["inputs"]["height"] = imagePromptDetail.height;
+
+    // const workflow = JSON.parse(
+    //   fs.readFileSync(
+    //     "E:/story video/comfyUI workflows/sdxl_lightning_workflow_full.json"
+    //   )
+    // );
+    // workflow["3"]["inputs"]["seed"] = Math.floor(Math.random() * 4294967294);
+    // workflow["6"]["inputs"]["text"] =
+    //   "master piece, digital art" + imagePromptDetail.prompt;
+    // workflow["5"]["inputs"]["width"] = imagePromptDetail.width;
+    // workflow["5"]["inputs"]["height"] = imagePromptDetail.height;
 
     const images = await client.getImages(workflow);
     const blob = Object.values(images)[0][0].blob;
@@ -280,6 +280,7 @@ async function generateContinousStoryScenePrompts(
     sceneDescriptions,
     splitLimit
   );
+
   const retry = 30;
   //const message = await generateText(messages);
   for (; index < sceneDescriptionChunks.length; index++) {
@@ -303,12 +304,12 @@ async function generateContinousStoryScenePrompts(
     You should only output a valid raw json in the format of [{segment: string, imagePrompt: string}].
     `
         : `
-    Below is one segment from a story. Split them into about ${sceneDescriptionChunk.length} smaller segments and create image prompt to capture the essence of the scence for each of the segments
+    Below is one segment from a story. Split them into about ${sceneDescriptionChunk.length} smaller and complete segments and create image prompt(usering the formular: An image of adjective, subject, doing action, additional details) to capture the essence of the scence for each of the segments
     ***
     ${sceneDescriptionChunk.join("\n")}
     ***
-    The image prompt should follow the following formula: An image of subject, adjective, doing action, additional details. 
-    The image prompt should consider the context of other segements
+    The image prompt should follow the following formula: An image of adjective, subject, doing action, additional details. 
+    The image prompt should consider the context of other segements. Please be as detailed as possibile about the details of the subject based on the context of the story
     The image description should match the specified genre ${genre} and style: ${style}.
     ${characters ? `Include the characters' appearance and names as specified in this JSON: ${JSON.stringify(characters)} when referring to the characters. ` : ""}
     You should only output a valid raw json in the format of [{segment: string, imagePrompt: string}].
@@ -328,11 +329,13 @@ async function generateContinousStoryScenePrompts(
 
     while (currentRetry < retry) {
       try {
+        console.log(`Attempt #${currentRetry + 1}`);
         const regex = /\[[\s\S]{10,}\]/gm;
         message = await generateTextOpenAI(messages, "ollama", "yi:34b");
         const matches = message.content.match(regex);
         if (matches && matches.length > 0) {
           const parsed = JSON.parse(matches[0]);
+          console.log(parsed, sceneDescriptionChunk);
           const storyUntouched =
             sceneDescriptions.length < 10
               ? sceneDescriptionChunk.length === parsed.length &&
@@ -344,7 +347,10 @@ async function generateContinousStoryScenePrompts(
                   parsed.map((object) => object.segment).join("\n")
                 ) > 0.8;
 
-          if (storyUntouched && parsed.every((object) => object.imagePrompt)) {
+          if (
+            storyUntouched &&
+            parsed.every((object) => object.segment && object.imagePrompt)
+          ) {
             scenePrompts.push(...parsed);
             messages.push(message);
             fs.writeFileSync(
@@ -412,7 +418,9 @@ Ensure that narratives and dialogues are strictly distinguished. Always provide 
       [""]
     );
 
-  for (let contentChunk of contentChunks) {
+  for (let index = 0; index < contentChunks.length; index++) {
+    const contentChunk = contentChunks[index];
+    console.log("Create lines for chunk", index + 1);
     const prompt = {
       role: "user",
       content: `
@@ -433,22 +441,26 @@ Output: Only provide the raw JSON string without any additional messages or form
     let generated = false;
     //const message = await generateText(messages);
     while (currentRetry < retry) {
+      console.log("Attempt #", currentRetry + 1);
       try {
-        const message = await generateTextOpenAI(
-          messages,
-          "openAI",
-          "gpt-3.5-turbo-0125"
-        );
-
-        console.log(message.content);
-        const json = message.content
-          .replace("```json", "")
-          .replace("```", "")
-          .replace("...", "");
-
-        storyLines.push(...JSON.parse(json));
-        generated = true;
-        break;
+        const regex = /\[[\s\S]{10,}\]/gm;
+        const message = await generateTextOpenAI(messages, "ollama", "yi:34b");
+        console.log("message", message);
+        const matches = message.content.match(regex);
+        if (matches && matches.length > 0) {
+          const parsed = JSON.parse(matches[0]);
+          if (
+            stringSimilarity(
+              contentChunk,
+              parsed.map((object) => object.content).join("\n")
+            ) > 0.8 &&
+            parsed.every((object) => object.content && object.type)
+          ) {
+            storyLines.push(...JSON.parse(matches[0]));
+            generated = true;
+            break;
+          }
+        }
       } catch (ex) {
         console.log("Error creating story lines", ex);
         currentRetry++;

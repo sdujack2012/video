@@ -13,6 +13,7 @@ with open(sys.argv[1], "r", encoding="utf-8") as file:
         tts.tts_to_file(text=audioInfo["text"],
                     file_path=audioInfo["outputFile"],
                     speaker_wav=audioInfo["speakerVoiceFile"],
+                    enable_text_splitting=True,
                     language="en")
 
 
