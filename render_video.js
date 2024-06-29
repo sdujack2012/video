@@ -317,7 +317,7 @@ async function renderVideoClipChunk(videoConfigClipChunk, outputFilePath, gpu) {
 
   // join video with audio
   await exec(
-    `ffmpeg -threads 1 -hwaccel_device ${gpu} -hwaccel cuda ${videoInputString} -filter_complex "${audioTransitions}${videoTransitions}" -map "[video]" -map [audio] -c:a aac -c:v h264_nvenc -preset p6 -y "${outputFilePath}"`
+    `ffmpeg -hwaccel_device ${gpu} -hwaccel cuda ${videoInputString} -filter_complex "${audioTransitions}${videoTransitions}" -map "[video]" -map [audio] -c:a aac -c:v h264_nvenc -preset p6 -y "${outputFilePath}"`
   );
   return outputFilePath;
 }
