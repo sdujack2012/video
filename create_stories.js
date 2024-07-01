@@ -37,14 +37,19 @@ async function createShortStories(storyTitle) {
   }
 
   for (let title of storiesToCreate) {
-    await generateVideoResources(title);
-    // await generateStoryExtractInfo(story.title);
-    // await splitStoryIntoChunks(story.title);
-    // await generateStoryAudios(story.title);
-    // await generateTranscript(story.title);
-    // await generateScenePrompts(story.title);
-    // await generateScenes(story.title);
-    await renderVideo(title);
+    try {
+      console.log(`Creating video: ${title}`);
+      await generateVideoResources(title);
+      // await generateStoryExtractInfo(story.title);
+      // await splitStoryIntoChunks(story.title);
+      // await generateStoryAudios(story.title);
+      // await generateTranscript(story.title);
+      // await generateScenePrompts(story.title);
+      // await generateScenes(story.title);
+      await renderVideo(title);
+    } catch (ex) {
+      console.log(ex);
+    }
   }
 }
 

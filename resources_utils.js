@@ -12,43 +12,48 @@ const util = require("util");
 const exec = util.promisify(require("child_process").exec);
 const { ComfyUIClient } = require("comfy-ui-client");
 async function generateTextOpenAI(messages, provider, model) {
-  const apiKeys = JSON.parse(fs.readFileSync("./apikey.json", "utf8"));
-  const baseURLs = {
-    openAI: undefined,
-    groq: "https://api.groq.com/openai/v1",
-    hf: "https://rhlobdgx0viuipyy.us-east-1.aws.endpoints.huggingface.cloud/v1/",
-    ollama: "http://localhost:11434/v1/",
-  };
-  const apiKey = apiKeys[provider];
-  const baseURL = baseURLs[provider];
+  if (provider === "ollama") {
+    return await generateTextOllama(messages, model);
+  } else {
+    const apiKeys = JSON.parse(fs.readFileSync("./apikey.json", "utf8"));
+    const baseURLs = {
+      openAI: undefined,
+      groq: "https://api.groq.com/openai/v1",
+      hf: "https://rhlobdgx0viuipyy.us-east-1.aws.endpoints.huggingface.cloud/v1/",
+      ollama: "http://localhost:11434/v1/",
+    };
+    const apiKey = apiKeys[provider];
+    const baseURL = baseURLs[provider];
 
-  if (!apiKey || (!baseURL && provider !== "openAI")) {
-    throw `Error: apiKey ${apiKey} or baseURL ${baseURL}`;
+    if (!apiKey || (!baseURL && provider !== "openAI")) {
+      throw `Error: apiKey ${apiKey} or baseURL ${baseURL}`;
+    }
+
+    const openai = new OpenAI({
+      apiKey,
+      baseURL,
+    });
+
+    const res = await openai.chat.completions.create({
+      messages,
+      model,
+    });
+    return res.choices[0].message;
   }
-
-  const openai = new OpenAI({
-    apiKey,
-    baseURL,
-  });
-
-  const res = await openai.chat.completions.create({
-    messages,
-    model,
-  });
-
-  return res.choices[0].message;
 }
 
 async function freeVRams() {
-  await axios.post(
-    "http://localhost:11434/api/generate",
-    '{"model": "yi:34b", "keep_alive": 0}',
-    {
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded",
-      },
-    }
-  );
+  try {
+    await axios.post(
+      "http://localhost:11434/api/generate",
+      '{"model": "mannix/llama3-sppo-iter3:q8_0", "keep_alive": 0}',
+      {
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+      }
+    );
+  } catch (ex) {}
 }
 
 async function generateImage(prompt, width, height) {
@@ -81,25 +86,25 @@ async function batchGenerateImagesComfyUI(imagePromptDetails) {
   // Generate images
 
   for (let imagePromptDetail of imagePromptDetails) {
-    // const workflow = JSON.parse(
-    //   fs.readFileSync("E:/story video/comfyUI workflows/sdxl_refiner.json")
-    // );
-    // workflow["10"]["inputs"]["noise_seed"] = Math.floor(
-    //   Math.random() * 4294967294
-    // );
-    // workflow["6"]["inputs"]["text"] =
-    //   "master piece, 8k" + imagePromptDetail.prompt;
-    // workflow["5"]["inputs"]["width"] = imagePromptDetail.width;
-    // workflow["5"]["inputs"]["height"] = imagePromptDetail.height;
-
     const workflow = JSON.parse(
-      fs.readFileSync("E:/story video/comfyUI workflows/sd3.json")
+      fs.readFileSync("E:/story video/comfyUI workflows/sdxl_refiner.json")
     );
-    workflow["3"]["inputs"]["seed"] = Math.floor(Math.random() * 4294967294);
+    workflow["10"]["inputs"]["noise_seed"] = Math.floor(
+      Math.random() * 4294967294
+    );
     workflow["6"]["inputs"]["text"] =
-      "digital art, master piece, 8k" + imagePromptDetail.prompt;
+      "master piece, 8k" + imagePromptDetail.prompt;
     workflow["5"]["inputs"]["width"] = imagePromptDetail.width;
     workflow["5"]["inputs"]["height"] = imagePromptDetail.height;
+
+    // const workflow = JSON.parse(
+    //   fs.readFileSync("E:/story video/comfyUI workflows/sd3.json")
+    // );
+    // workflow["3"]["inputs"]["seed"] = Math.floor(Math.random() * 4294967294);
+    // workflow["6"]["inputs"]["text"] =
+    //   "digital art, master piece, 8k" + imagePromptDetail.prompt;
+    // workflow["5"]["inputs"]["width"] = imagePromptDetail.width;
+    // workflow["5"]["inputs"]["height"] = imagePromptDetail.height;
 
     // const workflow = JSON.parse(
     //   fs.readFileSync(
@@ -182,6 +187,25 @@ async function generateText(messages) {
   return response.data.data.message;
 }
 
+async function generateTextOllama(messages, model) {
+  const response = await axios.post(
+    `http://localhost:11434/api/chat`,
+    {
+      messages: messages,
+      model,
+      stream: false,
+      keep_alive: "5s",
+    },
+    {
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+    }
+  );
+  return response.data.message;
+}
+
 async function batchGenerateImagesByPrompts(imagePromptDetails) {
   console.log("Batch generating images");
   // await executeExternalHelper("python generate_image.py", imagePromptDetails);
@@ -253,7 +277,7 @@ Please write a Stable Diffusion prompt to create a cover image for the following
   const messages = [systemMessage, prompt];
 
   messages.push(prompt);
-  const message = await generateTextOpenAI(messages, "ollama", "llama3");
+  const message = await generateTextOpenAI(messages, "ollama", "yi:34b");
   return message.content;
 }
 
@@ -265,8 +289,12 @@ async function generateContinousStoryScenePrompts(
   characters
 ) {
   console.log("Batch Generating scene prompts");
+  const splitLimit = 3;
   const tempFolder = createFolderIfNotExist("temp", title);
-  const cacheFile = path.resolve(tempFolder, "image_prompts_cache.json");
+  const cacheFile = path.resolve(
+    tempFolder,
+    `image_prompts_cache_${splitLimit}.json`
+  );
 
   const cache = fs.existsSync(cacheFile)
     ? JSON.parse(fs.readFileSync(cacheFile, "utf8"))
@@ -275,7 +303,7 @@ async function generateContinousStoryScenePrompts(
   const scenePrompts = cache ? cache.scenePrompts : [];
   let index = cache ? cache.index + 1 : 0;
   let messages = cache ? cache.messages : [];
-  const splitLimit = cache ? cache.splitLimit : 5;
+
   const sceneDescriptionChunks = splitArrayIntoChunks(
     sceneDescriptions,
     splitLimit
@@ -295,21 +323,22 @@ async function generateContinousStoryScenePrompts(
     ***
     ${JSON.stringify(sceneDescriptionChunk.map((sceneDescription) => ({ segment: sceneDescription, imagePrompt: null })))}
     *** 
-    As you can see the imagePrompt attibutes are empty
-    Keep each of the segment original and fill the imagePrompt to capture the essence of the scence described by the segment.
-    The image prompt should follow the following formula: An image of subject, adjective, doing action, additional details. 
-    The image prompt should consider the context of other segements
+    Create image prompts to capture the essence of the scence described by the segment 
+    The image prompts must follow this formula: An image of subject, adjective, doing action, additional details
+    The image prompts must be as detailed as possibile. 
     The image description should match the specified genre ${genre} and style: ${style}.
     ${characters ? `Include the characters' appearance and names as specified in this JSON: ${JSON.stringify(characters)} when referring to the characters. ` : ""}
-    You should only output a valid raw json in the format of [{segment: string, imagePrompt: string}].
+    Keep each of the segment original
+    You should only output a valid raw json in the format of [{segment: string, imagePrompt: string}]. Make the length of the output json array same as the input
     `
         : `
-    Below is one segment from a story. Split them into about ${sceneDescriptionChunk.length} smaller and complete segments and create image prompt(usering the formular: An image of adjective, subject, doing action, additional details) to capture the essence of the scence for each of the segments
+    Below are segments from a story separated by linebreaks. Split them into about ${sceneDescriptionChunk.length} smaller and complete segments and create image prompt(usering the formular: An image of adjective, subject, doing action, additional details) to capture the essence of the scence for each of the segments
     ***
     ${sceneDescriptionChunk.join("\n")}
     ***
     The image prompt should follow the following formula: An image of adjective, subject, doing action, additional details. 
-    The image prompt should consider the context of other segements. Please be as detailed as possibile about the details of the subject based on the context of the story
+    The image prompt should be as detailed as possibile and should be as detailed as possibile
+    The image prompt should consider the context of other segements. 
     The image description should match the specified genre ${genre} and style: ${style}.
     ${characters ? `Include the characters' appearance and names as specified in this JSON: ${JSON.stringify(characters)} when referring to the characters. ` : ""}
     You should only output a valid raw json in the format of [{segment: string, imagePrompt: string}].
@@ -331,7 +360,11 @@ async function generateContinousStoryScenePrompts(
       try {
         console.log(`Attempt #${currentRetry + 1}`);
         const regex = /\[[\s\S]{10,}\]/gm;
-        message = await generateTextOpenAI(messages, "ollama", "yi:34b");
+        message = await generateTextOpenAI(
+          messages,
+          "ollama",
+          "llama3:8b-instruct-fp16"
+        );
         const matches = message.content.match(regex);
         if (matches && matches.length > 0) {
           const parsed = JSON.parse(matches[0]);
@@ -444,7 +477,7 @@ Output: Only provide the raw JSON string without any additional messages or form
       console.log("Attempt #", currentRetry + 1);
       try {
         const regex = /\[[\s\S]{10,}\]/gm;
-        const message = await generateTextOpenAI(messages, "ollama", "yi:34b");
+        const message = await generateTextOpenAI(messages, "ollama", "llama3");
         console.log("message", message);
         const matches = message.content.match(regex);
         if (matches && matches.length > 0) {

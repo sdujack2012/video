@@ -164,10 +164,13 @@ async function renderVideo(topic) {
     );
     console.log("Extracting transcript");
     const transcript = (await batchGenerateTranscripts([finalAudioPath], 0))[0];
-    const words = transcript.flatMap((segment) => segment.words);
+    const words = transcript
+      .flatMap((segment) => segment.words)
+      // Remove title from the subtitle
+      .filter((word) => word.end > story.titleAudioDuration + 0.2);
     const assFilePath = createSubtitles(
       words,
-      storyVideoFolder,
+      path.resolve(storyVideoFolder, `subtitle.ass`),
       story.videoType
     );
     return assFilePath;
@@ -192,9 +195,12 @@ async function renderVideo(topic) {
   );
 
   const assFilePath = await creatingAssFilePromise;
+  // Workaround for difficult ass filter
+  const tempAssLink = "./temp/temp.ass";
+  fs.copyFileSync(assFilePath, tempAssLink);
   console.log("Creating final video");
   await exec(
-    `ffmpeg -i "${mergedVideoPath}" -stream_loop -1 -i "${bgm}" -i "${assFilePath}" -filter_complex "[0:a][1:a] amix=inputs=2:duration=first[aout];[aout]afade=type=out:duration=${audioFadeOutDuration}:start_time=${totalDuration - audioFadeOutDuration}[afinal]" -c:v copy -c:a aac -c:s copy -map 0:v -map "[afinal]" -map 2:s  -y "${finalVideoPath}"`
+    `ffmpeg -i "${mergedVideoPath}" -stream_loop -1 -i "${bgm}" -filter_complex "[0:v]ass="${tempAssLink}"[v];[0:a][1:a] amix=inputs=2:duration=first[aout];[aout]afade=type=out:duration=${audioFadeOutDuration}:start_time=${totalDuration - audioFadeOutDuration}[afinal]" -c:v h264_nvenc -preset p6 -c:a aac -map [v] -map "[afinal]"  -y "${finalVideoPath}"`
   );
 
   story = JSON.parse(fs.readFileSync(storyJsonPath, "utf8"));
@@ -203,6 +209,7 @@ async function renderVideo(topic) {
 
   fs.writeFileSync(storyJsonPath, JSON.stringify(story, null, 4));
   await exec(`rmdir /s /Q "${storyTempFolder}"`);
+  fs.unlinkSync(tempAssLink);
   console.log("time elapsed:", (Date.now() - current) / 60000);
 }
 
@@ -337,14 +344,14 @@ async function renderVideoClipConfig(
   const audioInput = `-f lavfi -t "${audioConfig.startTime}" -i anullsrc=channel_layout=stereo:sample_rate=44100 -i "${audioConfig.filePath}" -t "${audioConfig.duration}" -f lavfi -t "${silencePaddingAfter.toFixed(2)}" -i anullsrc=channel_layout=stereo:sample_rate=44100`;
   const videopInput = `-loop 1 -framerate ${framerate} -i "${videoConfigClip.clipImage.filePath}" -t "${videoDuration}"`;
   await exec(
-    `ffmpeg -threads 1 -hwaccel_device ${availableGpu} -hwaccel cuda ${videopInput} ${audioInput}  \
+    `ffmpeg -hwaccel_device ${availableGpu} -hwaccel cuda ${videopInput} ${audioInput}  \
     -filter_complex "[0:v]${createVideoEffect(videoConfigClip, framerate, screenSize)}[v];[1:a][2:a][3:a]concat=n=3:v=0:a=1[a]" \
     -shortest -pix_fmt yuv420p -c:v h264_nvenc -c:a aac -map "[v]" -map "[a]" -preset p6 -y "${filePath}"`
   );
   videoConfigClip.videoFilePath = filePath;
 }
 
-function createSubtitles(words, storyVideoFolder, videoType) {
+function createSubtitles(words, assFilePath, videoType) {
   const subtitleFontSize = subtitleFontSizes[videoType];
   const screenSize = sizeMapping[videoType];
   const subtitleYs = {
@@ -394,13 +401,12 @@ PlayResY: 768
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Default,Arial,${subtitleFontSize},&H00FFFFFF,&H000000FF,&HC3000000,&HD9000000,0,0,0,0,100,100,0,0,3,10,10,2,10,10,10,1
+Style: Default,Arial,${subtitleFontSize},&H00FFFFFF,&H00FFFFFF,&HFFFFFFFF,&HDD777777,0,0,0,0,100,100,0,0,1,10,2,2,10,10,10,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 ${subtitles.join("\n")}
     `;
-  const assFilePath = path.resolve(storyVideoFolder, `subtitle.ass`);
   fs.writeFileSync(assFilePath, assFile);
   return assFilePath;
 }

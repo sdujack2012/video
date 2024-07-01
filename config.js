@@ -13,6 +13,7 @@ const lineYStartMappings = {
 };
 
 const genreBGM = {
+  horror_female_vocal: "./BGMs/horror_lady_vocal.mp3",
   horror: "./BGMs/Horror-Long-Version.mp3",
   default: "./BGMs/Sunset-Landscape.mp3",
   kid: "./BGMs/Sunset-Landscape.mp3",
@@ -43,7 +44,7 @@ const subtitleFontSizes = {
 
 const clipGappingTime = 0.1;
 const framerate = 60;
-const transitionDuration = 0.5;
+const transitionDuration = 0.3;
 const audioFadeOutDuration = 0.5;
 
 const numGPUs = 2;

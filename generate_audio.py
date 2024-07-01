@@ -6,7 +6,7 @@ if sys.argv[1] is None:
     sys.exit(0)
 with open(sys.argv[1], "r", encoding="utf-8") as file:
     audioInfos = json.load(file)
-    device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     tts = TTS("tts_models/multilingual/multi-dataset/xtts_v2").to(device)
 
     for audioInfo in audioInfos:

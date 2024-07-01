@@ -9,7 +9,6 @@ const {
   generateStoryContentByCharactor,
   extractCharactersFromStory,
   speedUpAudio,
-  freeVRams,
 } = require("./resources_utils");
 const { getAudioDurationInSeconds } = require("get-audio-duration");
 const { createVideoClipConfigs } = require("./render_video");
@@ -122,17 +121,11 @@ function splitLongTextIntoChunks(content) {
       .filter((chunk) => chunk.length > 1);
   });
 
-  let longChunk = chunks.find((chunk) => chunk.split(" ").length > maxToken);
-
   return chunks;
 }
 
 function assignVoicesForCharacters(characters) {
-  const narratorVoiceFile = "./speakers/matt.mp3";
-
   const characterVoiceFileMappings = {};
-
-  characterVoiceFileMappings["Narrator"] = narratorVoiceFile;
 
   const maleVoiceFiles = [
     "./speakers/man 1.mp3",
@@ -197,9 +190,15 @@ async function generateStoryAudios(title) {
   const storyFolder = createFolderIfNotExist("E:/story video/videos", title);
   const storyJsonPath = path.resolve(storyFolder, "story.json");
   const storyAudioFolder = createFolderIfNotExist(storyFolder, "aduios");
-
+  const narratorVoiceFiles = {
+    mythology: "./speakers/matt.mp3",
+    horror: "./speakers/Vincent Price.mp3",
+    kid: "./speakers/matt.mp3",
+  };
+  const defaultNarratorVoiceFile = "./speakers/matt.mp3";
   const story = JSON.parse(fs.readFileSync(storyJsonPath, "utf8"));
-  const narratorVoiceFile = "./speakers/matt.mp3";
+  const narratorVoiceFile =
+    narratorVoiceFiles[story.genre] || defaultNarratorVoiceFile;
 
   const audioFileInfos = [];
   story.titleAudio = path.resolve(storyAudioFolder, `titleAudio.mp3`);
@@ -212,7 +211,7 @@ async function generateStoryAudios(title) {
   const characterVoiceFileMappings = story.enableRoles
     ? assignVoicesForCharacters(story.characters)
     : {}; // awalys use narratorVoiceFile
-
+  characterVoiceFileMappings["Narrator"] = narratorVoiceFile;
   story.contentChunks = story.contentChunks.map((contentChunk, index) => ({
     ...contentChunk,
     audioFile: path.resolve(storyAudioFolder, `chunk ${index + 1}.mp3`),
@@ -376,7 +375,6 @@ async function generateVideoResources(title) {
 
   await generateStoryAudios(title);
   //await generateTranscript(title);
-  freeVRams();
   await generateScenes(title);
 }
 
