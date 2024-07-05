@@ -96,8 +96,49 @@ async function createAiSession(hostChannel) {
   };
 }
 
+function registerExitCallback(callback) {
+  process.on("exit", () => {
+    callback();
+    setTimeout(() => {
+      process.exit();
+    }, 1000);
+  });
+
+  // catches ctrl+c event
+  process.on("SIGINT", () => {
+    callback();
+    setTimeout(() => {
+      process.exit();
+    }, 1000);
+  });
+
+  // catches "kill pid" (for example: nodemon restart)
+  process.on("SIGUSR1", () => {
+    callback();
+    setTimeout(() => {
+      process.exit();
+    }, 1000);
+  });
+
+  process.on("SIGUSR2", () => {
+    callback();
+    setTimeout(() => {
+      process.exit();
+    }, 1000);
+  });
+
+  // catches uncaught exceptions
+  process.on("uncaughtException", () => {
+    callback();
+    setTimeout(() => {
+      process.exit();
+    }, 1000);
+  });
+}
+
 exports.createFolderIfNotExist = createFolderIfNotExist;
 exports.executeExternalHelper = executeExternalHelper;
 exports.createAiSession = createAiSession;
 exports.splitArrayIntoChunks = splitArrayIntoChunks;
 exports.startOllama = startOllama;
+exports.registerExitCallback = registerExitCallback;

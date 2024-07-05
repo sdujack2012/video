@@ -24,10 +24,11 @@ async function generateScenes(title) {
   const { width, height } = sizeMapping[story.videoType];
 
   story.coverImageFile = path.resolve(storyImageFolder, `cover.png`);
-
+  story.coverVideoFile = path.resolve(storyImageFolder, `coverVideo.gif`);
   let imagesInfos = [
     {
-      outputFile: story.coverImageFile,
+      imageFile: story.coverImageFile,
+      videoFile: story.coverVideoFile,
       prompt: story.coverImagePrompt,
       width,
       height,
@@ -37,23 +38,29 @@ async function generateScenes(title) {
   story.contentChunks.forEach((contentChunk, chunkIndex) => {
     contentChunk.sceneImageFile = path.resolve(
       storyImageFolder,
-      `scene ${chunkIndex + 1}.png`
+      `scene${chunkIndex + 1}.png`
     );
+    contentChunk.sceneVideoFile =
+      story.enableVideo &&
+      path.resolve(storyImageFolder, `sceneVideo${chunkIndex + 1}.gif`);
     contentChunk.imageSize = { width, height };
 
     imagesInfos.push({
-      outputFile: contentChunk.sceneImageFile,
+      imageFile: contentChunk.sceneImageFile,
+      videoFile: contentChunk.sceneVideoFile,
       prompt: contentChunk.sceneImagePrompt,
       width,
       height,
     });
   });
-
-  imagesInfos = imagesInfos.filter(
-    (imagesInfo) => !fs.existsSync(imagesInfo.outputFile)
+  console.log(story.contentChunks);
+  const skip = imagesInfos.every(
+    (imagesInfo) =>
+      fs.existsSync(imagesInfo.imageFile) &&
+      (!story.enableVideo || fs.existsSync(imagesInfo.videoFile))
   );
 
-  if (imagesInfos.length === 0) {
+  if (skip) {
     console.log("Skip Generate images");
     return;
   }
@@ -65,7 +72,6 @@ async function generateScenes(title) {
 
 function splitLongTextIntoChunks(content) {
   const tokenLimit = 40;
-  const maxToken = 200;
 
   const absoluteSeparators = ["***"];
   const relativeSeparators = ["\n", ".", "?", "!", ";"];

@@ -1,32 +1,41 @@
 import torch
-from diffusers import I2VGenXLPipeline
-from diffusers.utils import export_to_gif, load_image
-from os import listdir
-from os.path import isfile, join
+import sys, json
 
-folder = "E:\story video\story\Fairy Lanterns and the Night of Wishes\images"
-onlyfiles = [f for f in listdir(folder) if isfile(join(folder, f))]
+from diffusers import AnimateDiffPipeline, LCMScheduler, MotionAdapter
+from diffusers.utils import export_to_gif
 
-pipeline = I2VGenXLPipeline.from_pretrained("ali-vilab/i2vgen-xl", torch_dtype=torch.float16, variant="fp16").to("cuda")
-pipeline.enable_model_cpu_offload()
+if sys.argv[1] is None:
+    sys.exit(0)
 
-for file in onlyfiles:
-    if not file.endswith(".png"):
-        continue
-    fullPath = folder +"\\" + file
-    image = load_image(fullPath).convert("RGB")
-    prompt = "An image of curious Lily wandering through the dense forest, a glimmer of light catching her eye."
-    negative_prompt = "Distorted, discontinuous, Ugly, blurry, low resolution, motionless, static, disfigured, disconnected limbs, Ugly faces, incomplete arms"
-    generator = torch.manual_seed(0)
-    frames = pipeline(
-        prompt=prompt,
-        image=image,
-        num_inference_steps=50,
-        negative_prompt=negative_prompt,
-        guidance_scale=1.0,
-        ##generator=generator
-    ).frames[0]
-    export_to_gif(frames,fullPath.replace(".png", ".gif"))
+adapter = MotionAdapter.from_pretrained("wangfuyun/AnimateLCM", torch_dtype=torch.float16).to("cuda:1")
+pipe = AnimateDiffPipeline.from_pretrained("emilianJR/epiCRealism", motion_adapter=adapter, torch_dtype=torch.float16).to("cuda:1")
+pipe.scheduler = LCMScheduler.from_config(pipe.scheduler.config, beta_schedule="linear")
+
+pipe.load_lora_weights("wangfuyun/AnimateLCM", weight_name="AnimateLCM_sd15_t2v_lora.safetensors", adapter_name="lcm-lora")
+pipe.set_adapters(["lcm-lora"], [0.8])
+
+pipe.enable_vae_slicing()
+pipe.enable_model_cpu_offload()
+with open(sys.argv[1], "r", encoding="utf-8") as file:
+    videoInfos = json.load(file)
+
+    for videoInfo in videoInfos:
+        output = pipe(
+            prompt=videoInfo["prompt"],
+            negative_prompt="bad quality, worse quality, low resolution",
+            num_frames=16,
+            guidance_scale=2.0,
+            num_inference_steps=6,
+            height=videoInfo["height"], 
+            width=videoInfo["width"],
+            generator=torch.Generator("cpu").manual_seed(0),
+        )
+        frames = output.frames[0]
+        export_to_gif(frames, videoInfos["outputFile"])
+
+
+
+
 
 
 

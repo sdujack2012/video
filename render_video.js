@@ -51,7 +51,7 @@ async function renderVideo(topic) {
 
   // Render each video clip concurrently
 
-  const gpus = observable([
+  let gpus = observable([
     { limit: 3, current: 0 },
     { limit: 3, current: 0 },
   ]);
@@ -105,7 +105,10 @@ async function renderVideo(topic) {
     chunkSplitLimit
   );
   console.log(`Creating video chunk`);
-
+  gpus = observable([
+    { limit: 2, current: 0 },
+    { limit: 2, current: 0 },
+  ]);
   const rendingClipChunkPromises = [];
   for (let index = 0; index < videoConfigClipChunks.length; index++) {
     await when(() => gpus.some((gpu) => gpu.limit > gpu.current));
@@ -187,7 +190,7 @@ async function renderVideo(topic) {
 
   //Mix merged videos with bgm
   console.log(`Mix videos with bgm`);
-  const finalVideoPath = path.resolve(storyVideoFolder, `video.mkv`);
+  const finalVideoPath = path.resolve(storyVideoFolder, `${topic}.mkv`);
   const totalDuration = videoConfigClips.reduce(
     (totalDuration, videoConfigClip) =>
       videoConfigClip.duration + totalDuration,
@@ -279,10 +282,7 @@ async function renderVideoClipChunk(videoConfigClipChunk, outputFilePath, gpu) {
   let previousOffset = 0;
 
   const videoInputString = videoConfigClipChunk
-    .map(
-      (videoConfigClip) =>
-        `-c:v h264_cuvid -i "${videoConfigClip.videoFilePath}"`
-    )
+    .map((videoConfigClip) => `-i "${videoConfigClip.videoFilePath}"`)
     .join(" ");
   const videoTransitions = videoConfigClipChunk
     .map((videoConfigClip, index) => {
@@ -324,7 +324,7 @@ async function renderVideoClipChunk(videoConfigClipChunk, outputFilePath, gpu) {
 
   // join video with audio
   await exec(
-    `ffmpeg -hwaccel_device ${gpu} -hwaccel cuda ${videoInputString} -filter_complex "${audioTransitions}${videoTransitions}" -map "[video]" -map [audio] -c:a aac -c:v h264_nvenc -preset p6 -y "${outputFilePath}"`
+    `ffmpeg -hwaccel_device ${gpu} -hwaccel cuda ${videoInputString} -filter_complex "${audioTransitions}${videoTransitions}" -r ${framerate} -map "[video]" -map [audio] -c:a aac -c:v h264_nvenc -preset p6 -y "${outputFilePath}"`
   );
   return outputFilePath;
 }
@@ -342,11 +342,11 @@ async function renderVideoClipConfig(
     videoDuration - audioConfig.startTime - audioConfig.duration;
   silencePaddingAfter = silencePaddingAfter > 0 ? silencePaddingAfter : 0.01;
   const audioInput = `-f lavfi -t "${audioConfig.startTime}" -i anullsrc=channel_layout=stereo:sample_rate=44100 -i "${audioConfig.filePath}" -t "${audioConfig.duration}" -f lavfi -t "${silencePaddingAfter.toFixed(2)}" -i anullsrc=channel_layout=stereo:sample_rate=44100`;
-  const videopInput = `-loop 1 -framerate ${framerate} -i "${videoConfigClip.clipImage.filePath}" -t "${videoDuration}"`;
+  const videopInput = `${videoConfigClip.clipImage.enableVideo ? "-stream_loop -1" : "-loop 1 -framerate ${framerate}"}  -i "${videoConfigClip.clipImage.filePath}" -t "${videoDuration}"`;
   await exec(
     `ffmpeg -hwaccel_device ${availableGpu} -hwaccel cuda ${videopInput} ${audioInput}  \
     -filter_complex "[0:v]${createVideoEffect(videoConfigClip, framerate, screenSize)}[v];[1:a][2:a][3:a]concat=n=3:v=0:a=1[a]" \
-    -shortest -pix_fmt yuv420p -c:v h264_nvenc -c:a aac -map "[v]" -map "[a]" -preset p6 -y "${filePath}"`
+    -r ${framerate} -shortest -pix_fmt yuv420p -c:v h264_nvenc -c:a aac -map "[v]" -map "[a]" -preset p6 -y "${filePath}"`
   );
   videoConfigClip.videoFilePath = filePath;
 }
@@ -355,7 +355,7 @@ function createSubtitles(words, assFilePath, videoType) {
   const subtitleFontSize = subtitleFontSizes[videoType];
   const screenSize = sizeMapping[videoType];
   const subtitleYs = {
-    standard: 0,
+    standard: 40,
     short: screenSize.height - 700,
   };
   const subtitleY = subtitleYs[videoType];
@@ -401,7 +401,7 @@ PlayResY: 768
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Default,Arial,${subtitleFontSize},&H00FFFFFF,&H00FFFFFF,&HFFFFFFFF,&HDD777777,0,0,0,0,100,100,0,0,1,10,2,2,10,10,10,1
+Style: Default,Arial,${subtitleFontSize},&H00FFFFFF,&H00FFFFFF,&HFFFFFFFF,&HAA777777,0,0,0,0,100,100,0,0,1,10,2,2,10,10,10,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
@@ -426,6 +426,7 @@ async function createVideoClipConfigs(story, coverImageWithTitlePath) {
       clipImage: {
         filePath: coverImageWithTitlePath,
         duration: titleAudioDuration + 2,
+        enableVideo: false,
       },
       clipWords: [],
       duration: titleAudioDuration + 2,
@@ -446,15 +447,16 @@ async function createVideoClipConfigs(story, coverImageWithTitlePath) {
     };
 
     const clipImage = {
-      filePath: contentChunk.sceneImageFile,
+      filePath: contentChunk.sceneVideoFile || contentChunk.sceneImageFile,
       duration: audioDuration + 2 * clipGappingTime,
+      enableVideo: contentChunk.sceneVideoFile,
     };
 
     // add the clip config
     videoConfigClip.audioConfig = audioConfig;
     videoConfigClip.clipImage = clipImage;
     videoConfigClip.duration = clipImage.duration;
-    videoConfigClip.effect = "movingCropFilter";
+    videoConfigClip.effect = clipImage.enableVideo ? "" : "movingCropFilter";
     videoConfigClip.imageSize = contentChunk.imageSize;
     videoConfigClips.push(videoConfigClip);
   }
@@ -488,7 +490,7 @@ async function addTitleToCoverImage(story, screenSize, storyTempFolder) {
   while (
     titleSegments
       .map((titleSegment) => ctx.measureText(titleSegment).width)
-      .some((width) => width > canvas.width)
+      .some((width) => width > canvas.width - 30)
   ) {
     titleSegments = [];
     currentSplitCount++;
@@ -576,8 +578,15 @@ function createVideoEffect(videoConfigClip, framerate, screenSize) {
         videoConfigClip.duration,
         screenSize
       );
+    case "scaleFilter":
+      return createScaleFilter(
+        zoomInRate,
+        framerate,
+        videoConfigClip.duration,
+        screenSize
+      );
     default:
-      return createScaleFilter(screenSize);
+      return "null";
   }
 }
 
