@@ -11,7 +11,7 @@ const {
 } = require("./utils");
 const util = require("util");
 const exec = util.promisify(require("child_process").exec);
-const { ComfyUIClient } = require("comfy-ui-client");
+const { ComfyUIClient } = require("./comfyui_client");
 const { observable, when, runInAction } = require("mobx");
 
 async function generateTextOpenAI(messages, provider, model) {
@@ -96,9 +96,11 @@ async function batchGenerateImagesComfyUI(imagePromptDetails) {
     { client: client2, free: true },
   ]);
   const imagesGenerates = [];
-  registerExitCallback(() => {
-    client2.interrupt();
-    client1.interrupt();
+  registerExitCallback(async () => {
+    await client2.interrupt();
+    await client1.interrupt();
+    await client1.disconnect();
+    await client2.disconnect();
   });
 
   for (let imagePromptDetail of imagePromptDetails) {
@@ -113,18 +115,16 @@ async function batchGenerateImagesComfyUI(imagePromptDetails) {
       clients[availableClient].free = false;
     });
 
-    // const workflowLightning = JSON.parse(
+    // const workflow = JSON.parse(
     //   fs.readFileSync(
     //     "E:/story video/comfyUI workflows/sdxl_lightning_workflow_full.json"
     //   )
     // );
-    // workflowLightning["3"]["inputs"]["seed"] = Math.floor(
-    //   Math.random() * 4294967294
-    // );
-    // workflowLightning["6"]["inputs"]["text"] =
+    // workflow["3"]["inputs"]["seed"] = Math.floor(Math.random() * 4294967294);
+    // workflow["6"]["inputs"]["text"] =
     //   "master piece, digital art" + imagePromptDetail.prompt;
-    // workflowLightning["5"]["inputs"]["width"] = imagePromptDetail.width;
-    // workflowLightning["5"]["inputs"]["height"] = imagePromptDetail.height;
+    // workflow["5"]["inputs"]["width"] = imagePromptDetail.width;
+    // workflow["5"]["inputs"]["height"] = imagePromptDetail.height;
 
     // const workflow = JSON.parse(
     //   fs.readFileSync(
@@ -154,13 +154,16 @@ async function batchGenerateImagesComfyUI(imagePromptDetails) {
       fs.readFileSync("E:/story video/comfyUI workflows/sd3.json")
     );
     workflow["3"]["inputs"]["seed"] = Math.floor(Math.random() * 4294967294);
-    workflow["6"]["inputs"]["text"] =
-      imagePromptDetail.prompt + "digital art, master piece";
+    workflow["6"]["inputs"]["text"] = imagePromptDetail.prompt + "master piece";
     workflow["5"]["inputs"]["width"] = imagePromptDetail.width;
     workflow["5"]["inputs"]["height"] = imagePromptDetail.height;
     const generateImage = async () => {
-      const images = await clients[availableClient].client.getImages(workflow);
-      const blob = Object.values(images)[0][0].blob;
+      const images = await clients[availableClient].client.getImages(
+        workflow,
+        null,
+        "png"
+      );
+      const blob = images[0].blob;
       fs.writeFileSync(
         imagePromptDetail.imageFile,
         Buffer.from(await blob.arrayBuffer())
@@ -174,13 +177,14 @@ async function batchGenerateImagesComfyUI(imagePromptDetails) {
 
   await Promise.all(imagesGenerates);
   imagesGenerates.length = 0;
+
   for (let imagePromptDetail of imagePromptDetails) {
     if (
       !imagePromptDetail.videoFile ||
       fs.existsSync(imagePromptDetail.videoFile)
-    )
+    ) {
       continue;
-    console.log(imagePromptDetail);
+    }
     await when(() => clients.some((clientConfig) => clientConfig.free));
     const availableClient = clients.findIndex(
       (clientConfig) => clientConfig.free
@@ -190,6 +194,24 @@ async function batchGenerateImagesComfyUI(imagePromptDetails) {
       clients[availableClient].free = false;
     });
 
+    // const workflowImg2Vid = JSON.parse(
+    //   fs.readFileSync(
+    //     "E:/story video/comfyUI workflows/workflow_img2vid_animationdiff.json"
+    //   )
+    // );
+    // workflowImg2Vid["10"]["inputs"]["seed"] = Math.floor(
+    //   Math.random() * 4294967294
+    // );
+    // workflowImg2Vid["374"]["inputs"]["text"] =
+    //   imagePromptDetail.prompt + "master piece";
+
+    // workflowImg2Vid["63"]["inputs"]["image"] = imagePromptDetail.imageFile;
+    // workflowImg2Vid["116"]["inputs"]["int"] = imagePromptDetail.width / 2;
+    // workflowImg2Vid["117"]["inputs"]["int"] = imagePromptDetail.height / 2;
+    // workflowImg2Vid["573"]["inputs"]["width"] = imagePromptDetail.width;
+    // workflowImg2Vid["573"]["inputs"]["height"] = imagePromptDetail.height;
+    // workflowImg2Vid["369"]["inputs"]["filename_prefix"] = "video_gif";
+
     const workflowImg2Vid = JSON.parse(
       fs.readFileSync("E:/story video/comfyUI workflows/workflow_img2vid.json")
     );
@@ -197,14 +219,19 @@ async function batchGenerateImagesComfyUI(imagePromptDetails) {
       Math.random() * 4294967294
     );
     workflowImg2Vid["23"]["inputs"]["image"] = imagePromptDetail.imageFile;
-    workflowImg2Vid["12"]["inputs"]["width"] = 512;
-    workflowImg2Vid["12"]["inputs"]["height"] = 768;
-    workflowImg2Vid["26"]["inputs"]["width"] = imagePromptDetail.width;
-    workflowImg2Vid["26"]["inputs"]["height"] = imagePromptDetail.height;
+    workflowImg2Vid["12"]["inputs"]["width"] = imagePromptDetail.width / 2;
+    workflowImg2Vid["12"]["inputs"]["height"] = imagePromptDetail.height / 2;
+    workflowImg2Vid["32"]["inputs"]["width"] = imagePromptDetail.width;
+    workflowImg2Vid["32"]["inputs"]["height"] = imagePromptDetail.height;
+    workflowImg2Vid["30"]["inputs"]["filename_prefix"] = "video_gif";
+
     const generateVideo = async () => {
-      const images =
-        await clients[availableClient].client.getImages(workflowImg2Vid);
-      const blob = Object.values(images)[0][0].blob;
+      const images = await clients[availableClient].client.getImages(
+        workflowImg2Vid,
+        "video_gif",
+        "mp4"
+      );
+      const blob = images[0].blob;
       fs.writeFileSync(
         imagePromptDetail.videoFile,
         Buffer.from(await blob.arrayBuffer())
@@ -217,7 +244,6 @@ async function batchGenerateImagesComfyUI(imagePromptDetails) {
     imagesGenerates.push(generateVideo());
   }
   await Promise.all(imagesGenerates);
-
   await client1.disconnect();
   await client2.disconnect();
 }
@@ -423,7 +449,7 @@ async function generateContinousStoryScenePrompts(
     The image description should match the specified genre ${genre} and style: ${style}.
     ${characters ? `Include the characters' appearance and names as specified in this JSON: ${JSON.stringify(characters)} when referring to the characters. ` : ""}
     Now output a valid raw json in the format of [{segment: string, imagePrompt: string}] and make sure that:
-    1. Keep the segemnt content untouched
+    1. Keep the segemnt content untouched and original. Don't change the spellings
     2. Don't split or merge the segemnts
     3. Make the length of the output json array same as the input
     `
@@ -437,7 +463,9 @@ async function generateContinousStoryScenePrompts(
     The image prompt should consider the context of other segements. 
     The image description should match the specified genre ${genre} and style: ${style}.
     ${characters ? `Include the characters' appearance and names as specified in this JSON: ${JSON.stringify(characters)} when referring to the characters. ` : ""}
-    You should only output a valid raw json in the format of [{segment: string, imagePrompt: string}].
+    Now output a valid raw json in the format of [{segment: string, imagePrompt: string}] and make sure that:
+    1. Keep the segemnt content untouched. Don't change the spellings
+    2. Don't split or merge the segemnts
     `;
     const prompt = {
       role: "user",
@@ -459,7 +487,7 @@ async function generateContinousStoryScenePrompts(
         message = await generateTextOpenAI(
           messages,
           "ollama",
-          "mannix/gemma2-9b-sppo-iter3:q8_0"
+          "llama3:8b-instruct-fp16"
         );
         const matches = message.content.match(regex);
         if (matches && matches.length > 0) {
@@ -544,7 +572,9 @@ async function refineImagePrompts(
     2. sceneImagePrompt must consider the context of the closest segments provided in the previous messages
     3. The sceneImagePrompt must match the specified genre ${genre} and style: ${style} if possible.
     ${characters ? `3. Include the characters' appearance and names as specified in this JSON: ${JSON.stringify(characters)} when referring to the characters. ` : ""}
-    4. You should only output a valid raw json in the format of {content: string, sceneImagePrompt: string}. Keep the content of the segement untouched
+    Now output a valid raw json in the format of {content: string, sceneImagePrompt: string} and make sure that:
+    1. Keep the segemnt content untouched
+    2. Don't split or merge the segemnts
     `;
     const prompt = {
       role: "user",
@@ -566,7 +596,7 @@ async function refineImagePrompts(
         message = await generateTextOpenAI(
           messages,
           "ollama",
-          "mannix/gemma2-9b-sppo-iter3:q8_0"
+          "llama3:8b-instruct-fp16"
         );
         const matches = message.content.match(regex);
         if (matches && matches.length > 0) {
@@ -746,7 +776,6 @@ async function extractCharactersFromStory(content) {
     .replace("```json", "")
     .replace("```", "")
     .replace("...", "");
-  console.log(json);
 
   return JSON.parse(json);
 }

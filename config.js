@@ -42,6 +42,11 @@ const subtitleFontSizes = {
   short: 20,
 };
 
+const titleFontSizes = {
+  standard: 40,
+  short: 30,
+};
+
 const clipGappingTime = 0.1;
 const framerate = 60;
 const transitionDuration = 0.3;
@@ -57,6 +62,7 @@ module.exports = {
   titleFontColors,
   coverImages,
   subtitleFontSizes,
+  titleFontSizes,
   clipGappingTime,
   framerate,
   audioFadeOutDuration,

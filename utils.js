@@ -126,14 +126,6 @@ function registerExitCallback(callback) {
       process.exit();
     }, 1000);
   });
-
-  // catches uncaught exceptions
-  process.on("uncaughtException", () => {
-    callback();
-    setTimeout(() => {
-      process.exit();
-    }, 1000);
-  });
 }
 
 exports.createFolderIfNotExist = createFolderIfNotExist;

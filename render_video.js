@@ -1,11 +1,15 @@
 const fs = require("fs");
 const path = require("path");
-const { createFolderIfNotExist, splitArrayIntoChunks } = require("./utils");
+const {
+  createFolderIfNotExist,
+  splitArrayIntoChunks,
+  executeExternalHelper,
+} = require("./utils");
 const util = require("util");
 const { observable, when, runInAction } = require("mobx");
 const exec = util.promisify(require("child_process").exec);
 const { getAudioDurationInSeconds } = require("get-audio-duration");
-const { createCanvas, loadImage, registerFont } = require("canvas");
+const { registerFont } = require("canvas");
 const { batchGenerateTranscripts } = require("./resources_utils");
 const {
   sizeMapping,
@@ -14,6 +18,7 @@ const {
   titleFontColors,
   coverImages,
   subtitleFontSizes,
+  titleFontSizes,
   clipGappingTime,
   framerate,
   transitionDuration,
@@ -38,16 +43,7 @@ async function renderVideo(topic) {
     return "Please fix videoType and genre";
   }
 
-  const coverImageWithTitlePath = await addTitleToCoverImage(
-    story,
-    screenSize,
-    storyTempFolder
-  );
-
-  const videoConfigClips = await createVideoClipConfigs(
-    story,
-    coverImageWithTitlePath
-  );
+  const videoConfigClips = await createVideoClipConfigs(story);
 
   // Render each video clip concurrently
 
@@ -342,13 +338,31 @@ async function renderVideoClipConfig(
     videoDuration - audioConfig.startTime - audioConfig.duration;
   silencePaddingAfter = silencePaddingAfter > 0 ? silencePaddingAfter : 0.01;
   const audioInput = `-f lavfi -t "${audioConfig.startTime}" -i anullsrc=channel_layout=stereo:sample_rate=44100 -i "${audioConfig.filePath}" -t "${audioConfig.duration}" -f lavfi -t "${silencePaddingAfter.toFixed(2)}" -i anullsrc=channel_layout=stereo:sample_rate=44100`;
-  const videopInput = `${videoConfigClip.clipImage.enableVideo ? "-stream_loop -1" : "-loop 1 -framerate ${framerate}"}  -i "${videoConfigClip.clipImage.filePath}" -t "${videoDuration}"`;
+  const videopInput = `${videoConfigClip.clipImage.enableVideo ? "-stream_loop -1" : `-loop 1 -framerate ${framerate}`}  -i "${videoConfigClip.clipImage.filePath}" -t "${videoDuration}"`;
+  const overlay = videoConfigClip.overlayFile
+    ? `-stream_loop -1 -i "${videoConfigClip.overlayFile}"`
+    : "";
   await exec(
-    `ffmpeg -hwaccel_device ${availableGpu} -hwaccel cuda ${videopInput} ${audioInput}  \
-    -filter_complex "[0:v]${createVideoEffect(videoConfigClip, framerate, screenSize)}[v];[1:a][2:a][3:a]concat=n=3:v=0:a=1[a]" \
+    `ffmpeg -hwaccel_device ${availableGpu} -hwaccel cuda ${videopInput} ${audioInput} ${overlay}  \
+    -filter_complex "[0:v]${createVideoEffect(videoConfigClip, framerate, screenSize)}[v];[1:a][2:a][3:a]concat=n=3:v=0:a=1[a]${overlay ? ";[4]format=yuva444p,colorchannelmixer=aa=0.1[overlay];[overlay][v]scale2ref[overlay][main];[main][overlay]overlay[v]" : ""}" \
     -r ${framerate} -shortest -pix_fmt yuv420p -c:v h264_nvenc -c:a aac -map "[v]" -map "[a]" -preset p6 -y "${filePath}"`
   );
   videoConfigClip.videoFilePath = filePath;
+
+  if (videoConfigClip.title) {
+    await executeExternalHelper("python moving_text.py", {
+      text: videoConfigClip.title,
+      width: screenSize.width,
+      height: screenSize.height,
+      duration: videoConfigClip.duration,
+      fontSize: videoConfigClip.fontSize,
+      font: videoConfigClip.font,
+      fontColor: videoConfigClip.fontColor,
+      outputFilePath: "E:/story video/test.mkv",
+      videoPath: filePath,
+    });
+    videoConfigClip.videoFilePath = "E:/story video/test.mkv";
+  }
 }
 
 function createSubtitles(words, assFilePath, videoType) {
@@ -411,8 +425,17 @@ ${subtitles.join("\n")}
   return assFilePath;
 }
 
-async function createVideoClipConfigs(story, coverImageWithTitlePath) {
+async function createVideoClipConfigs(story) {
   //Create title clip
+  const fontSize = titleFontSizes[story.videoType];
+  const titleFont = titleFonts[story.genre]
+    ? titleFonts[story.genre]
+    : titleFonts["default"];
+  const titleFontColor = titleFontColors[story.genre]
+    ? titleFontColors[story.genre]
+    : titleFontColors["default"];
+  registerFont(titleFont, { family: "Title font" });
+
   const titleAudioDuration =
     story.titleAudioDuration ||
     (await getAudioDurationInSeconds(story.titleAudio));
@@ -424,13 +447,21 @@ async function createVideoClipConfigs(story, coverImageWithTitlePath) {
         duration: titleAudioDuration,
       },
       clipImage: {
-        filePath: coverImageWithTitlePath,
+        filePath:
+          story.coverVideoFile ||
+          story.coverImageFile ||
+          coverImages[story.videoType],
         duration: titleAudioDuration + 2,
-        enableVideo: false,
+        enableVideo: !!story.coverVideoFile,
       },
       clipWords: [],
       duration: titleAudioDuration + 2,
-      effect: null,
+      effect: "",
+      title: story.title,
+      fontSize: fontSize,
+      font: "Title font",
+      fontColor: titleFontColor,
+      overlayFile: story.overlayFile,
     },
   ];
 
@@ -458,67 +489,15 @@ async function createVideoClipConfigs(story, coverImageWithTitlePath) {
     videoConfigClip.duration = clipImage.duration;
     videoConfigClip.effect = clipImage.enableVideo ? "" : "movingCropFilter";
     videoConfigClip.imageSize = contentChunk.imageSize;
+    videoConfigClip.overlayFile =
+      contentChunk.overlayFile === undefined
+        ? story.overlayFile
+        : contentChunk.overlayFile;
+
     videoConfigClips.push(videoConfigClip);
   }
   videoConfigClips.slice(-1)[0].duration += audioFadeOutDuration;
   return videoConfigClips;
-}
-
-async function addTitleToCoverImage(story, screenSize, storyTempFolder) {
-  const titleFont = titleFonts[story.genre]
-    ? titleFonts[story.genre]
-    : titleFonts["default"];
-  const titleFontColor = titleFontColors[story.genre]
-    ? titleFontColors[story.genre]
-    : titleFontColors["default"];
-
-  const coverImagePath = story.coverImageFile || coverImages[story.videoType];
-
-  registerFont(titleFont, { family: "Title font" });
-
-  const canvas = createCanvas(screenSize.width, screenSize.height);
-  const ctx = canvas.getContext("2d");
-  // Draw cat with lime helmet
-  const coverImage = await loadImage(coverImagePath);
-
-  ctx.drawImage(coverImage, 0, 0, canvas.width, canvas.height);
-  ctx.font = `60px "Title font"`;
-  ctx.fillStyle = titleFontColor;
-  let titleSegments = [story.title];
-
-  let currentSplitCount = 1;
-  while (
-    titleSegments
-      .map((titleSegment) => ctx.measureText(titleSegment).width)
-      .some((width) => width > canvas.width - 30)
-  ) {
-    titleSegments = [];
-    currentSplitCount++;
-    const titleparts = story.title.split(" ");
-    const chunkSize = titleparts.length / currentSplitCount;
-    for (let i = 0; i < titleparts.length; i += chunkSize) {
-      titleSegments.push(titleparts.slice(i, i + chunkSize).join(" "));
-    }
-  }
-
-  let currentY = 0;
-  for (let titleSegment of titleSegments) {
-    const title = titleSegment;
-    const titleWidth = ctx.measureText(title).width;
-    ctx.fillText(
-      title,
-      canvas.width / 2 - titleWidth / 2,
-      (story.videoType === "short" ? canvas.height / 2 : 150) + currentY
-    );
-    currentY += 60;
-  }
-
-  const coverImageWithTitlePath = path.resolve(
-    storyTempFolder,
-    `cover_image_with_title.png`
-  );
-  fs.writeFileSync(coverImageWithTitlePath, canvas.toBuffer(), "binary");
-  return coverImageWithTitlePath;
 }
 
 function createVideoEffect(videoConfigClip, framerate, screenSize) {

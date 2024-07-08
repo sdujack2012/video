@@ -1,8 +1,8 @@
 {
   "3": {
     "inputs": {
-      "seed": 144009172843100,
-      "steps": 20,
+      "seed": 313902115221461,
+      "steps": 10,
       "cfg": 1,
       "sampler_name": "euler",
       "scheduler": "karras",
@@ -29,11 +29,11 @@
   },
   "12": {
     "inputs": {
-      "width": 576,
-      "height": 1024,
-      "video_frames": 10,
-      "motion_bucket_id": 30,
-      "fps": 12,
+      "width": 768,
+      "height": 1360,
+      "video_frames": 30,
+      "motion_bucket_id": 127,
+      "fps": 10,
       "augmentation_level": 0,
       "clip_vision": ["15", 1],
       "init_image": ["23", 0],
@@ -65,7 +65,7 @@
   },
   "23": {
     "inputs": {
-      "image": "scene 5 (1).png",
+      "image": "scene1 (1).png",
       "upload": "image"
     },
     "class_type": "LoadImage",
@@ -73,7 +73,37 @@
       "title": "Load Image"
     }
   },
-  "26": {
+  "30": {
+    "inputs": {
+      "frame_rate": 20,
+      "loop_count": 0,
+      "filename_prefix": "comfy",
+      "format": "video/h264-mp4",
+      "pix_fmt": "yuv420p",
+      "crf": 19,
+      "save_metadata": true,
+      "pingpong": true,
+      "save_output": true,
+      "images": ["31", 0]
+    },
+    "class_type": "VHS_VideoCombine",
+    "_meta": {
+      "title": "Video Combine 🎥🅥🅗🅢"
+    }
+  },
+  "31": {
+    "inputs": {
+      "ckpt_name": "GMFSS_fortuna_union",
+      "clear_cache_after_n_frames": 10,
+      "multiplier": 2,
+      "frames": ["32", 0]
+    },
+    "class_type": "GMFSS Fortuna VFI",
+    "_meta": {
+      "title": "GMFSS Fortuna VFI"
+    }
+  },
+  "32": {
     "inputs": {
       "upscale_method": "nearest-exact",
       "width": 512,
@@ -84,21 +114,6 @@
     "class_type": "ImageScale",
     "_meta": {
       "title": "Upscale Image"
-    }
-  },
-  "30": {
-    "inputs": {
-      "frame_rate": 8,
-      "loop_count": 1,
-      "filename_prefix": "comfy",
-      "format": "image/gif",
-      "pingpong": true,
-      "save_output": true,
-      "images": ["26", 0]
-    },
-    "class_type": "VHS_VideoCombine",
-    "_meta": {
-      "title": "Video Combine 🎥🅥🅗🅢"
     }
   }
 }

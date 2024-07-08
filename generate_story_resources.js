@@ -24,7 +24,8 @@ async function generateScenes(title) {
   const { width, height } = sizeMapping[story.videoType];
 
   story.coverImageFile = path.resolve(storyImageFolder, `cover.png`);
-  story.coverVideoFile = path.resolve(storyImageFolder, `coverVideo.gif`);
+  story.coverVideoFile =
+    story.enableVideo && path.resolve(storyImageFolder, `coverVideo.mp4`);
   let imagesInfos = [
     {
       imageFile: story.coverImageFile,
@@ -42,7 +43,7 @@ async function generateScenes(title) {
     );
     contentChunk.sceneVideoFile =
       story.enableVideo &&
-      path.resolve(storyImageFolder, `sceneVideo${chunkIndex + 1}.gif`);
+      path.resolve(storyImageFolder, `sceneVideo${chunkIndex + 1}.mp4`);
     contentChunk.imageSize = { width, height };
 
     imagesInfos.push({
@@ -53,7 +54,6 @@ async function generateScenes(title) {
       height,
     });
   });
-  console.log(story.contentChunks);
   const skip = imagesInfos.every(
     (imagesInfo) =>
       fs.existsSync(imagesInfo.imageFile) &&
