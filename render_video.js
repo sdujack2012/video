@@ -9,6 +9,7 @@ const util = require("util");
 const { observable, when, runInAction } = require("mobx");
 const exec = util.promisify(require("child_process").exec);
 const { getAudioDurationInSeconds } = require("get-audio-duration");
+const { getVideoDurationInSeconds } = require('get-video-duration');
 const { batchGenerateTranscripts } = require("./resources_utils");
 const {
   sizeMapping,
@@ -326,14 +327,34 @@ async function renderVideoClipConfig(
   const audioConfig = videoConfigClip.audioConfig;
   const videoDuration = videoConfigClip.duration;
   const audioInput = `-i "${audioConfig.filePath}"`;
-  const videopInput = `${videoConfigClip.clipImage.enableVideo ? "-stream_loop -1" : `-loop 1 -framerate ${framerate}`}  -i "${videoConfigClip.clipImage.filePath}" -t "${videoDuration}"`;
+
+  // For videos, we'll handle stretching in the filter if needed
+  const videopInput = `${videoConfigClip.clipImage.enableVideo ? "" : `-loop 1 -framerate ${framerate}`}  -i "${videoConfigClip.clipImage.filePath}"${!videoConfigClip.clipImage.enableVideo ? ` -t "${videoDuration}"` : ""}`;
+
   const overlay = videoConfigClip.overlayFile
     ? `-stream_loop -1 -i "${videoConfigClip.overlayFile}"`
     : "";
+
+  // If video is enabled, we need to check its duration and stretch if shorter than audio
+  let videoFilterPrefix = "";
+  if (videoConfigClip.clipImage.enableVideo) {
+    const originalVideoDuration = await getVideoDurationInSeconds(videoConfigClip.clipImage.filePath);
+    console.log(`Original video duration: ${originalVideoDuration}, target duration: ${videoDuration}`);
+    if (originalVideoDuration < videoDuration) {
+      // Video is shorter than audio, need to stretch it by slowing down playback
+      const speedFactor = videoDuration / originalVideoDuration;
+      // Use setpts to slow down and minterpolate for smooth frame interpolation
+      videoFilterPrefix = `setpts=${speedFactor}*PTS,`;
+    } else {
+      // Video is longer or equal, trim it to match audio duration
+      videoFilterPrefix = `trim=duration=${videoDuration},setpts=PTS-STARTPTS,`;
+    }
+  }
+
   await exec(
     `ffmpeg ${videopInput} ${audioInput} ${overlay}  \
-    -filter_complex "[0:v]${createVideoEffect(videoConfigClip, framerate, videoSize)}[v]${overlay ? ";[2]format=yuva444p,colorchannelmixer=aa=0.1[overlay];[overlay][v]scale2ref[overlay][main];[main][overlay]overlay[v]" : ""}" \
-    -r ${framerate} -shortest -pix_fmt yuv420p -c:v libx264 -c:a libopus -b:a 128k -map "[v]" -map 1 -y "${filePath}"`
+    -filter_complex "[0:v]${videoFilterPrefix}${createVideoEffect(videoConfigClip, framerate, videoSize)}[v]${overlay ? ";[2]format=yuva444p,colorchannelmixer=aa=0.1[overlay];[overlay][v]scale2ref[overlay][main];[main][overlay]overlay[v]" : ""}" \
+    -r ${framerate} -t "${videoDuration}" -pix_fmt yuv420p -c:v libx264 -c:a libopus -b:a 128k -map "[v]" -map 1 -y "${filePath}"`
   );
 
   if (videoConfigClip.title) {

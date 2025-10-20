@@ -242,6 +242,17 @@ const ComfyUIClient = class {
       this.ws?.on("message", onMessage);
     });
   }
+
+  async execute(prompt) {
+    if (!this.ws) {
+      throw new Error(
+        "WebSocket client is not connected. Please call connect() before interacting."
+      );
+    }
+    const queue = await this.queuePrompt(prompt);
+    const promptId = queue.prompt_id;
+    return promptId;
+  }
 };
 
 exports.ComfyUIClient = ComfyUIClient;

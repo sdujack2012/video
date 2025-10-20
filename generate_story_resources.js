@@ -279,9 +279,10 @@ async function generateStoryAudios(title) {
 
   if (audioFileInfosToCreate.length === 0) {
     console.log("Skipping generating audios");
-    return;
+  } else {
+    await batchGenerateAudios(audioFileInfosToCreate);
+
   }
-  await batchGenerateAudios(audioFileInfosToCreate);
 
   if (story.speedFactor) {
     story.titleAudio = await speedUpAudio(story.titleAudio, story.speedFactor);
@@ -402,7 +403,7 @@ async function generateScenePrompts(title) {
     );
 
     chuncksWithoutImagePrompts.forEach((_, index) => {
-      chuncksWithoutImagePrompts[index].sceneImagePrompt = imagePrompts[index].imagePrompt;
+      chuncksWithoutImagePrompts[index].sceneImagePrompt = imagePrompts[index];
     })
 
     fs.writeFileSync(storyJsonPath, JSON.stringify(story, null, 4));

@@ -19,7 +19,7 @@ const subtitleYs = {
 };
 const genreBGM = {
   horror_female_vocal: "./resources/BGMs/horror_lady_vocal.mp3",
-  horror: "./resources/BGMs/horror1.mp3",
+  horror: "./resources/BGMs/dead_silence.mp3",
   default: "./resources/BGMs/Sunset-Landscape.mp3",
   kid: "./resources/BGMs/Sunset-Landscape.mp3",
   mythology: "./resources/BGMs/intriguing.mp3",

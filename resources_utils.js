@@ -83,6 +83,19 @@ async function generateImage(prompt, width, height) {
   return response.data.data;
 }
 
+async function freeComfyUIMemory(client) {
+  try {
+    const freeMemoryWorkflow = JSON.parse(
+      fs.readFileSync("./comfyUI workflows/free_memory.json")
+    );
+    await client.execute(
+      freeMemoryWorkflow
+    );
+  } catch (ex) {
+    console.log(ex);
+  }
+}
+
 async function batchGenerateAudiosComfyUI(audioDetails) {
   const clients = observable([]);
   const clientId = Math.floor(Math.random() * 4294967294);
@@ -153,6 +166,9 @@ async function batchGenerateAudiosComfyUI(audioDetails) {
     };
     audioGenerates.push(generateAudio());
   }
+  await Promise.all(clients.map((client) =>
+    freeComfyUIMemory(client.client)
+  ));
   await Promise.all(audioGenerates);
   await Promise.all(clients.map((client) => client.client.disconnect()));
 }
@@ -166,15 +182,6 @@ async function batchGenerateVideosComfyUI(imagePromptDetails) {
     const client1 = new ComfyUIClient(serverAddress1, clientId);
     await client1.connect();
     clients.push({ client: client1, free: true });
-  } catch (ex) {
-    console.log(ex);
-  }
-
-  try {
-    const serverAddress2 = "127.0.0.1:8189";
-    const client2 = new ComfyUIClient(serverAddress2, clientId);
-    await client2.connect();
-    clients.push({ client: client2, free: true });
   } catch (ex) {
     console.log(ex);
   }
@@ -276,7 +283,6 @@ async function batchGenerateVideosComfyUI(imagePromptDetails) {
 
     // workflow["81"]["inputs"]["noise_seed"] = Math.floor(Math.random() * 4294967294);
     // workflow["89"]["inputs"]["text"] =
-    //   "cartoon, " +
     //   imagePromptDetail.style +
     //   ", " +
     //   imagePromptDetail.prompt;
@@ -304,7 +310,9 @@ async function batchGenerateVideosComfyUI(imagePromptDetails) {
     };
     imagesGenerates.push(generateImage());
   }
-
+  await Promise.all(clients.map((client) =>
+    freeComfyUIMemory(client.client)
+  ));
   await Promise.all(imagesGenerates);
   await Promise.all(clients.map((client) => client.client.disconnect()));
 }
@@ -396,7 +404,9 @@ async function batchGenerateImagesComfyUI(imagePromptDetails) {
     };
     imagesGenerates.push(generateImage());
   }
-
+  await Promise.all(clients.map((client) =>
+    freeComfyUIMemory(client.client)
+  ));
   await Promise.all(imagesGenerates);
   await Promise.all(clients.map((client) => client.client.disconnect()));
 }
@@ -580,9 +590,27 @@ async function generateContinousStoryScenePrompts(
     ? JSON.parse(fs.readFileSync(cacheFile, "utf8"))
     : null;
 
-  const systemMessage = {
-    role: "system",
-    message: `
+  const scenePrompts = cache ? cache.scenePrompts : [];
+  let index = cache ? cache.index + 1 : 0;
+  let messages = cache ? cache.messages : [];
+
+  const sceneDescriptionChunks = splitArrayIntoChunks(
+    sceneDescriptions,
+    splitLimit
+  );
+
+  const retry = 30;
+  //const message = await generateText(messages);
+  for (; index < sceneDescriptionChunks.length; index++) {
+    console.log(
+      `##############Creating scene prompts for chunk ${index + 1}/${sceneDescriptionChunks.length}`
+    );
+    const sceneDescriptionChunk = sceneDescriptionChunks[index];
+    const lastSceneDescriptions = index > 0
+      ? sceneDescriptions.slice(Math.max(0, index * splitLimit - 100), index * splitLimit)
+      : [];
+
+    const promptText = `
     You are an expert visual prompt engineer specializing in Qwen-Image. Your goal is to create clear, detailed, and visually compelling prompts that follow Qwen-Image’s optimal structure and guidelines.
 
 When the user describes an image idea (even briefly), you must rewrite it into a fully formatted Qwen-Image prompt that is simple, descriptive, and ready to use.
@@ -597,7 +625,7 @@ Avoid long, overloaded descriptions.
 
 Order of Elements (MUST follow this structure):
 
-[Main subject], [visual style/medium], [environment & background details], [lighting], [extra effects], ["exact text if any"]
+[visual style/medium], [Main subject] [action], [second subject] [action],  [environment & background details], [lighting], [extra effects], ["exact text if any"]
 
 
 Style and Clarity:
@@ -623,41 +651,30 @@ Ensure each element contributes to the visual clarity.
 
 Output Format:
 Always return results as:
-A [subject], [style], [environment], [lighting], [effects], [\"text\"]
-    `
-  };
-  const scenePrompts = cache ? cache.scenePrompts : [];
-  let index = cache ? cache.index + 1 : 0;
-  let messages = cache ? cache.messages : [systemMessage];
+[style], A [subject] [action], [second subject] [action],  [environment & background details], [lighting], [extra effects], ["exact text if any"]
+[environment], [lighting], [effects]
 
-  const sceneDescriptionChunks = splitArrayIntoChunks(
-    sceneDescriptions,
-    splitLimit
-  );
-
-  const retry = 30;
-  //const message = await generateText(messages);
-  for (; index < sceneDescriptionChunks.length; index++) {
-    console.log(
-      `##############Creating scene prompts for chunk ${index + 1}/${sceneDescriptionChunks.length}`
-    );
-    const sceneDescriptionChunk = sceneDescriptionChunks[index];
-    const promptText = `
+    ${lastSceneDescriptions.length > 0 ? `Below are the previous ${lastSceneDescriptions.length} scene descriptions for context:
+    ***
+    ${JSON.stringify(lastSceneDescriptions)}
+    ***
+    
+    ` : ''}
     Below is a sequence of ${sceneDescriptionChunk.length} continuous segments from a story, formatted as a JSON array
     ***
     ${JSON.stringify(sceneDescriptionChunk.map((sceneDescription) => sceneDescription))}
     *** 
-  create a image prompt based on the guidelines in the system message for each segment to capture the essence of the scence described by the segment, using your rich randomness or imagination to create different forms of reference images.
+    create a image prompt based on the guidelines in the system message for each segment to capture the essence of the scence described by the segment, using your rich randomness or imagination to create different forms of reference images.
 
-  The imagePrompt should match the specified genre ${genre} and style: ${style}
-    Now output a valid raw json array in the format of [{imagePrompt:string}] and make sure that the length of the output json array same as the input
-`;
+    The imagePrompt should match the specified genre ${genre} and style: ${style}
+    Now output a valid raw json array in the format of [string] and make sure that the length of the output json array same as the input ${sceneDescriptionChunk.length}
+  `;
     const prompt = {
       role: "user",
       content: promptText,
     };
     if (messages.length > 5) {
-      messages = [systemMessage, ...messages.slice(Math.max(messages.length - 3, 0))];
+      messages = [...messages.slice(Math.max(messages.length - 3, 0))];
     }
     messages.push(prompt);
 
@@ -669,7 +686,7 @@ A [subject], [style], [environment], [lighting], [effects], [\"text\"]
       try {
         console.log(`Attempt #${currentRetry + 1}`);
         const regex = /\[[\s\S]{10,}\]/gm;
-        message = await generateTextOpenAI(messages, "ollama", "qwen3:30b");
+        message = await generateTextOpenAI(messages, "ollama", "gpt-oss:20b");
         const matches = message.content.match(regex);
         if (matches && matches.length > 0) {
           const parsed = JSON.parse(matches[0]);
@@ -677,7 +694,7 @@ A [subject], [style], [environment], [lighting], [effects], [\"text\"]
 
           if (
             sceneDescriptionChunk.length === parsed.length &&
-            parsed.every((item) => item.imagePrompt)
+            parsed.every((item) => item)
           ) {
             console.log("parsed", parsed, parsed.length);
             scenePrompts.push(...parsed);
@@ -734,15 +751,10 @@ async function generateContinousStorySceneVideoPrompts(
 
   const videoPrompts = cache ? cache.videoPrompts : [];
   let index = cache ? cache.index + 1 : 0;
+
   let messages = cache ? cache.messages : [
-    {
-      role: "system",
-      message: `You are an experienced film concept designer and video generation expert. Your task is to generate a highly detailed and professional video prompt in JSON format based on a given theme. This prompt will be used to guide advanced video generation models like Google Veo. Please strictly adhere to the following JSON structure and content specifications. Each field should be as specific, vivid, and imaginative as possible to capture the details of real-world filmmaking.
-    Content Generation Guidelines (Please keep these principles in mind during generation): 1. shot ◦ composition: Detail the shot type (e.g., wide-angle, medium shot, close-up, long shot), focal length (e.g., 35mm lens, 85mm lens, 50mm lens, 100mm macro telephoto, 26mm equivalent lens), camera equipment (e.g., Sony Venice, ARRI Alexa series, RED series, iPhone 15 Pro Max, DJI Inspire 3 drone), and depth of field (e.g., deep depth of field, shallow depth of field). ◦ camera_motion: Precisely describe how the camera moves (e.g., smooth Steadicam arc, slow lateral track, static, handheld shake, slow pan, drone orbit, rising crane). ◦ frame_rate: Specify a cinematic standard frame rate (e.g., 24fps), high frame rate (e.g., 30fps, 60fps), or slow-motion frame rate (e.g., 120fps). ◦ film_grain: Describe the type or presence of film grain (e.g., "clean digital, no grain", "Kodak 250D digital emulation with subtle grain overlay", "natural Kodak film grain", "visible 16mm grain"). 2. subject ◦ description: Provide an extremely detailed depiction of the subject, including their age (e.g., 25 years old, 23 years old, 40 years old, 92 years old), gender, ethnicity (e.g., Chinese female, Egyptian female, K-pop artist, European female, East Asian female, African male, Korean female, German female, Italian female, Japanese), body type (e.g., slender and athletic), hair (color, style), and any unique facial features. For non-human subjects (e.g., beluga whale, phoenix, emu, golden eagle, duck, snail), describe their physical characteristics in detail. ◦ wardrobe: Exhaustively describe clothing, accessories, shoes, and makeup, including materials, colors, styles, and any specific details (e.g., light blue Hanfu, gold sequin belly dance costume, tailored charcoal grey suit, Dior streetwear). If the subject is an animal or has no specific clothing, this field should be explicitly set to "null". 3. scene ◦ location: Precisely specify the shooting location (e.g., misty lake shore, remote desert oasis, interior of a Gothic cathedral, quiet beach, modern gym, urban coffee shop, Japanese izakaya, interior of a train carriage, soccer field, Kowloon Walled City-like alleyway, New Zealand coast). ◦ time_of_day: Specify the time of day (e.g., dawn, early morning, morning, midday, afternoon, dusk, night). ◦ environment: Provide a detailed environmental description, capturing the atmosphere and background details (e.g., low-lying fog, starry sky and bonfire, beams of light from stained glass windows, soft morning mist and ocean waves, sunlit city streets). 4. visual_details ◦ action: Describe specific, observable, and dynamic actions and event sequences (e.g., a rapid sword-fighting routine, fusion dance, vows and facial transformation, TikTok challenge dance, frustration while putting on socks, a beluga whale leaping out of the water). ◦ props: List all relevant props and elements in the scene (e.g., silver-hilted sword, bonfire, candelabras, matcha latte and cheesecake, futuristic motorcycle). If there are no props in the scene, this field should be explicitly set to "null". 5. cinematography ◦ lighting: Detail the light sources, quality of light, color, and direction (e.g., natural dawn light softened by fog, bonfire as the primary light source, natural sunlight through stained glass windows, soft HDR reflections, warm tungsten light and natural window light). ◦ tone: Capture the abstract emotional or stylistic quality of the video (e.g., "fierce, elegant, fluid", "mystical, elegant, enchanting", "hyperrealistic with an ironic, dark comedic twist", "dreamy, serene, emotionally healing", "documentary realism", "epic, majestic, awe-inspiring", "wild, dynamic, unrestrained"). 6. color_palette ◦ Describe the dominant colors in the scene in detail, including hues and contrast (e.g., silver-blue, soft whites, and misty greys; rich earthy tones with golden highlights; natural stone greys and warm stained-glass colors; soft yellows, whites, and floral patterns). -------------------------------------------------------------------------------- Additional Considerations for Prompt Generation: 1.Granularity of Detail: The LLM should understand that every field requires as much specific detail as possible, rather than generalizations. For example, instead of just writing "a woman," write "a 25-year-old Chinese female with long, black hair tied back with a silk ribbon, a slender build, wearing a flowing, light-blue Hanfu...". 2.Consistency and Diversity: While the JSON structure must be strictly consistent, the content of each video prompt should be creative and diverse, reflecting the unique elements of different video genres (e.g., martial arts, dance, drama, nature documentary, sci-fi action, motivational, commercial, fantasy). 3.Handling Null Values: When a field (e.g., character and line in a dialogue object, or wardrobe for an animal) is not applicable, the LLM should use null instead of an empty string or omitting the field to maintain the integrity of the JSON structure. 3.Contextual Descriptions: When describing action, lighting, and sound effects, think about how these elements work together to create a specific **"tone"** and express it with vivid language. 4.Language Requirements: All output should be clear, concise, and use professional filmmaking terminology.
-    The videoPrompt should match the specified genre ${genre} and style: ${style}
-    keep it under 50 words
-    `
-    }];
+
+  ];
 
   const combinedSceneDescriptions = sceneDescriptions.map(
     (sceneDescription, index) => ({
@@ -763,22 +775,128 @@ async function generateContinousStorySceneVideoPrompts(
     console.log(
       `##############Creating video prompts for chunk ${index + 1}/${sceneDescriptionChunks.length}`
     );
+    const lastSceneDescriptions = index > 0
+      ? sceneDescriptions.slice(Math.max(0, index * splitLimit - 100), index * splitLimit)
+      : [];
+
     const sceneDescriptionChunk = sceneDescriptionChunks[index];
     const promptText = `
+    You are an experienced film concept designer and video generation expert. Your task is to generate a highly detailed and professional video prompt in JSON format based on a given theme. This prompt will be used to guide advanced video generation models like Google Veo.
+Please strictly adhere to the following JSON structure and content specifications. Each field should be as specific, vivid, and imaginative as possible to capture the details of real-world filmmaking.
+--------------------------------------------------------------------------------
+
+{
+    "shot": {
+      "composition": "string",
+        "camera_motion": "string", //make sure use dynamic camera motion
+          "frame_rate": "string",
+            "film_grain": "string"
+      // Optional fields, can be added for more detail:
+      // "duration": "string", // e.g., "8s"
+      // "resolution": "string", // e.g., "4K HDR"
+      // "focus": "string" // e.g., "manual locked on subjects, exposure locked"
+    },
+    "subject": {
+      "description": "string",
+        "wardrobe": "string" // Use "null" if the subject is an animal or has no specific clothing
+      // Optional fields:
+      // "pose": "string",
+      // "character_motion": "string",
+      // "name": "string", // For multiple subjects
+      // "nationality": "string" // For multiple subjects
+    },
+    "scene": {
+      "location": "string",
+        "time_of_day": "string",
+          "environment": "string"
+    },
+    "visual_details": {
+      "action": "string",
+        "props": "string" // Use "null" if there are no props
+      // Optional fields:
+      // "camera_cut": "string", // e.g., "after the line, camera cuts to client’s reaction"
+      // "action_sequence": "array of objects" // For phased actions, e.g., [1]
+    },
+    "cinematography": {
+      "lighting": "string",
+        "tone": "string"
+    },
+    "color_palette": "string"
+    // Optional fields:
+    // "output": { "quality": "string", "style": "string" }, // e.g., "8K HDR", "TV show quality footage" [2]
+    // "visual_rules": { "prohibited_elements": ["array of strings"] } // e.g., "STRICTLY NO on-screen subtitles" [3]
+  }
+
+--------------------------------------------------------------------------------
+Content Generation Guidelines (Please keep these principles in mind during generation):
+1.
+shot
+◦
+composition: Detail the shot type (e.g., wide-angle, medium shot, close-up, long shot), focal length (e.g., 35mm lens, 85mm lens, 50mm lens, 100mm macro telephoto, 26mm equivalent lens), camera equipment (e.g., Sony Venice, ARRI Alexa series, RED series, iPhone 15 Pro Max, DJI Inspire 3 drone), and depth of field (e.g., deep depth of field, shallow depth of field).
+◦
+camera_motion: Precisely describe how the camera moves, available motion: smooth Steadicam arc, slow lateral track, static, handheld shake, slow pan, drone orbit, rising crane - only use the motions mentioned here
+◦
+frame_rate: Specify a cinematic standard frame rate (e.g., 24fps), high frame rate (e.g., 30fps, 60fps), or slow-motion frame rate (e.g., 120fps).
+◦
+film_grain: Describe the type or presence of film grain (e.g., "clean digital, no grain", "Kodak 250D digital emulation with subtle grain overlay", "natural Kodak film grain", "visible 16mm grain").
+2.
+subject
+◦
+description: Provide an extremely detailed depiction of the subject, including their age (e.g., 25 years old, 23 years old, 40 years old, 92 years old), gender, ethnicity (e.g., Chinese female, Egyptian female, K-pop artist, European female, East Asian female, African male, Korean female, German female, Italian female, Japanese), body type (e.g., slender and athletic), hair (color, style), and any unique facial features. For non-human subjects (e.g., beluga whale, phoenix, emu, golden eagle, duck, snail), describe their physical characteristics in detail.
+◦
+wardrobe: Exhaustively describe clothing, accessories, shoes, and makeup, including materials, colors, styles, and any specific details (e.g., light blue Hanfu, gold sequin belly dance costume, tailored charcoal grey suit, Dior streetwear). If the subject is an animal or has no specific clothing, this field should be explicitly set to "null".
+3.
+scene
+◦
+location: Precisely specify the shooting location (e.g., misty lake shore, remote desert oasis, interior of a Gothic cathedral, quiet beach, modern gym, urban coffee shop, Japanese izakaya, interior of a train carriage, soccer field, Kowloon Walled City-like alleyway, New Zealand coast).
+◦
+time_of_day: Specify the time of day (e.g., dawn, early morning, morning, midday, afternoon, dusk, night).
+◦
+environment: Provide a detailed environmental description, capturing the atmosphere and background details (e.g., low-lying fog, starry sky and bonfire, beams of light from stained glass windows, soft morning mist and ocean waves, sunlit city streets).
+4.
+visual_details
+◦
+action: Describe specific, observable, and dynamic actions and event sequences (e.g., a rapid sword-fighting routine, fusion dance, vows and facial transformation, TikTok challenge dance, frustration while putting on socks, a beluga whale leaping out of the water).
+◦
+props: List all relevant props and elements in the scene (e.g., silver-hilted sword, bonfire, candelabras, matcha latte and cheesecake, futuristic motorcycle). If there are no props in the scene, this field should be explicitly set to "null".
+5.
+cinematography
+◦
+lighting: Detail the light sources, quality of light, color, and direction (e.g., natural dawn light softened by fog, bonfire as the primary light source, natural sunlight through stained glass windows, soft HDR reflections, warm tungsten light and natural window light).
+◦
+tone: Capture the abstract emotional or stylistic quality of the video (e.g., "fierce, elegant, fluid", "mystical, elegant, enchanting", "hyperrealistic with an ironic, dark comedic twist", "dreamy, serene, emotionally healing", "documentary realism", "epic, majestic, awe-inspiring", "wild, dynamic, unrestrained").
+6.
+color_palette
+◦
+Describe the dominant colors in the scene in detail, including hues and contrast (e.g., silver-blue, soft whites, and misty greys; rich earthy tones with golden highlights; natural stone greys and warm stained-glass colors; soft yellows, whites, and floral patterns).
+--------------------------------------------------------------------------------
+Additional Considerations for Prompt Generation:
+1.Granularity of Detail: The LLM should understand that every field requires as much specific detail as possible, rather than generalizations. For example, instead of just writing "a woman," write "a 25-year-old Chinese female with long, black hair tied back with a silk ribbon, a slender build, wearing a flowing, light-blue Hanfu...".
+2.Consistency and Diversity: While the JSON structure must be strictly consistent, the content of each video prompt should be creative and diverse, reflecting the unique elements of different video genres (e.g., martial arts, dance, drama, nature documentary, sci-fi action, motivational, commercial, fantasy).
+3.Contextual Descriptions: When describing action, lighting, and sound effects, think about how these elements work together to create a specific **"tone"** and express it with vivid language.
+4.Language Requirements: All output should be clear, concise, and use professional filmmaking terminology.
+    The videoPrompt should match the specified genre ${genre} and style: ${style}
+     ${lastSceneDescriptions.length > 0 ? `Below are the previous ${lastSceneDescriptions.length} scene descriptions for context:
+    ***
+    ${JSON.stringify(lastSceneDescriptions)}
+    ***
+    
+    ` : ''}
+
     Below is a sequence of ${sceneDescriptionChunk.length} continuous segments from a story, formatted as a JSON array, with the imagePrompt and sceneDescription:
     ***
     ${JSON.stringify(sceneDescriptionChunk)}
     *** 
 
-    Output the videoPrompt fields to capture the essence of the scence described by the sceneDescriptions and imagePrompts according to the above guidelines, using your rich randomness or imagination to create different forms of reference images.
-    Now output a valid json arrary and make sure that the length of the output json array same as the input
+    Output the video prompts to capture the essence of the scence described by the sceneDescriptions and imagePrompts according to the above guidelines, using your rich randomness or imagination to create different forms of reference images.
+    Now output a valid json array containing the video prompts as strings strictly in the structure of [string] and make sure that the length of the output json array same as the input ${sceneDescriptionChunk.length}
 `;
     const prompt = {
       role: "user",
       content: promptText,
     };
     if (messages.length > 5) {
-      messages = messages.slice(Math.max(messages.length - 3, 0));
+      messages = [...messages.slice(Math.max(messages.length - 3, 0))];
     }
     messages.push(prompt);
 
@@ -790,7 +908,7 @@ async function generateContinousStorySceneVideoPrompts(
       try {
         console.log(`Attempt #${currentRetry + 1}`);
         const regex = /\[[\s\S]{10,}\]/gm;
-        message = await generateTextOpenAI(messages, "ollama", "qwen3:30b");
+        message = await generateTextOpenAI(messages, "ollama", "gpt-oss:20b");
         const matches = message.content.match(regex);
         if (matches && matches.length > 0) {
           const parsed = JSON.parse(matches[0]);
