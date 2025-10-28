@@ -12,6 +12,8 @@ const {
   extractCharactersFromStory,
   speedUpAudio,
   generateStoryCoverPrompt,
+  batchRefineVideoPromptsComfyUI,
+  batchRefineVideoPromptsOllama
 } = require("./resources_utils");
 const { getAudioDurationInSeconds } = require("get-audio-duration");
 const { createVideoClipConfigs } = require("./render_video");
@@ -31,10 +33,12 @@ async function generateScenes(title) {
     {
       imageFile: story.coverImageFile,
       videoFile: story.coverVideoFile,
-      prompt: story.coverImagePrompt,
+      prompt: story.style + ", " + story.coverImagePrompt,
+      refinedVideoPrompt: story.coverImagePrompt,
       audioDuration: story.titleAudioDuration,
       width,
       height,
+      isCover: true
     },
   ];
 
@@ -54,10 +58,12 @@ async function generateScenes(title) {
         imageFile: contentChunk.sceneImageFile,
         videoFile: contentChunk.sceneVideoFile,
         prompt: story.style + ", " + contentChunk.sceneImagePrompt,
-        videoPrompt: story.style + ", " + contentChunk.videoPrompt,
+        videoPrompt: contentChunk.videoPrompt,
+        refinedVideoPrompt: contentChunk.refinedVideoPrompt,
         audioDuration: contentChunk.audioDuration,
         width,
         height,
+        isCover: false,
       });
     });
   }
@@ -75,6 +81,14 @@ async function generateScenes(title) {
 
   await batchGenerateImagesByPrompts(imagesInfos);
   if (story.enableVideo) {
+    console.log("Refining video prompts");
+    await batchRefineVideoPromptsOllama(imagesInfos);
+    const contentChunkimagesInfos = imagesInfos.filter(info => !info.isCover);
+
+    story.contentChunks.forEach((_, index) => {
+      story.contentChunks[index].refinedVideoPrompt = JSON.stringify(contentChunkimagesInfos[index].refinedVideoPrompt);
+    })
+    fs.writeFileSync(storyJsonPath, JSON.stringify(story, null, 4));
     await batchGenerateVideosByPrompts(imagesInfos);
   }
   fs.writeFileSync(storyJsonPath, JSON.stringify(story, null, 4));

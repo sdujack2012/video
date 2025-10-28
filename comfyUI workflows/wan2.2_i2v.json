@@ -179,7 +179,7 @@
   },
   "101": {
     "inputs": {
-      "lora_name": "wan2.2\\wan2.2_i2v_lightx2v_4steps_lora_v1_high_noise.safetensors",
+      "lora_name": "wan2.2\\wan2.2_i2v_A14b_high_noise_lora_rank64_lightx2v_4step_1022.safetensors",
       "strength_model": 1,
       "model": [
         "112",
@@ -193,7 +193,7 @@
   },
   "102": {
     "inputs": {
-      "lora_name": "wan2.2\\wan2.2_i2v_lightx2v_4steps_lora_v1_low_noise.safetensors",
+      "lora_name": "wan2.2\\wan2.2_i2v_A14b_low_noise_lora_rank64_lightx2v_4step_1022.safetensors",
       "strength_model": 1,
       "model": [
         "113",
@@ -236,7 +236,6 @@
       "filename_prefix": "video/ComfyUI",
       "format": "auto",
       "codec": "auto",
-      "video-preview": "",
       "video": [
         "94",
         0

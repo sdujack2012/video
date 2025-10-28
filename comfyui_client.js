@@ -209,7 +209,6 @@ const ComfyUIClient = class {
           const historyRes = await this.getHistory(promptId);
           const history = historyRes[promptId];
           if (!history) return;
-
           for (const nodeId of Object.keys(history.outputs)) {
             const nodeOutput = history.outputs[nodeId];
             const allFiles = Object.values(nodeOutput).flatMap(files => files).filter(
@@ -235,6 +234,41 @@ const ComfyUIClient = class {
           }
           this.ws?.off("message", onMessage);
           return resolve(outputFiles);
+        } catch (err) {
+          return reject(err);
+        }
+      };
+      this.ws?.on("message", onMessage);
+    });
+  }
+
+  async getOutputText(prompt) {
+    if (!this.ws) {
+      throw new Error(
+        "WebSocket client is not connected. Please call connect() before interacting."
+      );
+    }
+    const queue = await this.queuePrompt(prompt);
+    const promptId = queue.prompt_id;
+    const outputTexts = [];
+    return new Promise((resolve, reject) => {
+      const onMessage = async () => {
+        try {
+          const historyRes = await this.getHistory(promptId);
+          const history = historyRes[promptId];
+          if (!history) return;
+
+          for (const nodeId of Object.keys(history.outputs)) {
+            const nodeOutput = history.outputs[nodeId];
+
+            const texts = Object.values(nodeOutput).flatMap(text => text).filter(
+              text => text
+            );
+            outputTexts.push(...texts);
+          }
+          console.log("outputTexts", outputTexts);
+          resolve(outputTexts);
+          this.ws?.off("message", onMessage);
         } catch (err) {
           return reject(err);
         }
