@@ -144,6 +144,7 @@ async function batchGenerateAudiosComfyUI(audioDetails) {
   registerExitCallback(async () => {
     clients.forEach(async (client) => {
       await client.client.interrupt();
+      await freeComfyUIMemory(client.client);
       await client.client.disconnect();
     });
   });
@@ -213,6 +214,7 @@ async function batchGenerateVideosComfyUI(imagePromptDetails) {
   registerExitCallback(async () => {
     clients.forEach(async (client) => {
       await client.client.interrupt();
+      await freeComfyUIMemory(client.client);
       await client.client.disconnect();
     });
   });
@@ -375,6 +377,7 @@ async function batchRefineVideoPromptsComfyUI(imagePromptDetails) {
   registerExitCallback(async () => {
     clients.forEach(async (client) => {
       await client.client.interrupt();
+      await freeComfyUIMemory(client.client);
       await client.client.disconnect();
     });
   });
@@ -617,6 +620,7 @@ async function batchGenerateImagesComfyUI(imagePromptDetails) {
   registerExitCallback(async () => {
     clients.forEach(async (client) => {
       await client.client.interrupt();
+      await freeComfyUIMemory(client.client);
       await client.client.disconnect();
     });
   });
@@ -752,7 +756,7 @@ async function generateTextOllama(messages, model) {
       messages: messages,
       model,
       stream: false,
-      keep_alive: "5s",
+      keep_alive: "1s",
     },
     {
       headers: {
@@ -842,7 +846,7 @@ Please write a image prompt to create a cover image for the following story cont
   const messages = [systemMessage, prompt];
 
   messages.push(prompt);
-  const message = await generateTextOpenAI(messages, "ollama", "qwen3:30b");
+  const message = await generateTextOpenAI(messages, "ollama", "gpt-oss:20b");
   return message.content;
 }
 
@@ -915,8 +919,6 @@ Include environmental context and lighting.
 
 Add optional stylistic effects (e.g., fog, glow, bokeh, reflections, motion blur).
 
-If the image contains text, wrap the exact words in double quotes.
-
 Tone and Composition:
 
 Avoid excessive commas and unnecessary adjectives.
@@ -926,9 +928,7 @@ Ensure each element contributes to the visual clarity.
 
 Output Format:
 Always return results as:
-[style], A [subject] [action], [second subject] [action],  [environment & background details], [lighting], [extra effects], ["exact text if any"]
-[environment], [lighting], [effects]
-
+[style], [first subject] [action], [second subject] [action],  [environment & background details], [lighting], [extra effects] [environment]
     ${lastSceneDescriptions.length > 0 ? `Below are the previous ${lastSceneDescriptions.length} scene descriptions for context:
     ***
     ${JSON.stringify(lastSceneDescriptions)}
@@ -961,7 +961,7 @@ Always return results as:
       try {
         console.log(`Attempt #${currentRetry + 1}`);
         const regex = /\[[\s\S]{10,}\]/gm;
-        message = await generateTextOpenAI(messages, "ollama", "qwen3:30b");
+        message = await generateTextOpenAI(messages, "ollama", "gpt-oss:20b");
         const matches = message.content.match(regex);
         if (matches && matches.length > 0) {
           const parsed = JSON.parse(matches[0]);
@@ -1183,7 +1183,7 @@ Additional Considerations for Prompt Generation:
       try {
         console.log(`Attempt #${currentRetry + 1}`);
         const regex = /\[[\s\S]{10,}\]/gm;
-        message = await generateTextOpenAI(messages, "ollama", "qwen3:30b");
+        message = await generateTextOpenAI(messages, "ollama", "gpt-oss:20b");
         const matches = message.content.match(regex);
         if (matches && matches.length > 0) {
           const parsed = JSON.parse(matches[0]);
@@ -1295,7 +1295,7 @@ best quality, masterpiece, detailed, woman standing before fire, Jason Benjamin,
       try {
         console.log(`Attempt #${currentRetry + 1}`);
         const regex = /\{[\s\S]{10,}\}/gm;
-        message = await generateTextOpenAI(messages, "ollama", "qwen3:30b");
+        message = await generateTextOpenAI(messages, "ollama", "gpt-oss:20b");
         const matches = message.content.match(regex);
         if (matches && matches.length > 0) {
           const parsed = JSON.parse(matches[0]);
@@ -1391,7 +1391,7 @@ Output: Only provide the raw JSON string without any additional messages or form
         const regex = /\[[\s\S]{10,}\]/gm;
         const message = await generateTextOpenAI(
           messages,
-          "ollama", "qwen3:30b");
+          "ollama", "gpt-oss:20b");
         console.log("message", message);
         const matches = message.content.match(regex);
         if (matches && matches.length > 0) {
@@ -1475,7 +1475,7 @@ async function extractCharactersFromStory(content) {
   };
   messages.push(prompt);
 
-  const message = await generateTextOpenAI(messages, "ollama", "qwen3:30b");
+  const message = await generateTextOpenAI(messages, "ollama", "gpt-oss:20b");
 
   messages.push(message);
   const json = message.content
