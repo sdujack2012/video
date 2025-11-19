@@ -287,14 +287,25 @@ async function batchGenerateVideosComfyUI(imagePromptDetails) {
     // workflow["78"]["inputs"]["filename_prefix"] = "video";
 
 
-    const workflow = JSON.parse(
-      fs.readFileSync("./comfyUI workflows/wan2.2_i2v.json")
-    );
+    // const workflow = JSON.parse(
+    //   fs.readFileSync("./comfyUI workflows/wan2.2_i2v.json")
+    // );
 
+    // workflow["86"]["inputs"]["noise_seed"] = Math.floor(Math.random() * 4294967294);
+    // workflow["93"]["inputs"]["text"] = imagePromptDetail.refinedVideoPrompt;
+    // workflow["98"]["inputs"]["width"] = imagePromptDetail.width / 2;
+    // workflow["98"]["inputs"]["height"] = imagePromptDetail.height / 2;
+    // workflow["97"]["inputs"]["image"] = imagePromptDetail.imageFile;
+    // workflow["108"]["inputs"]["filename_prefix"] = "video";
+
+    const workflow = JSON.parse(
+      fs.readFileSync("./comfyUI workflows/wan2.2_i2v_painter.json")
+    );
     workflow["86"]["inputs"]["noise_seed"] = Math.floor(Math.random() * 4294967294);
-    workflow["93"]["inputs"]["text"] = imagePromptDetail.refinedVideoPrompt;
-    workflow["98"]["inputs"]["width"] = imagePromptDetail.width / 2;
-    workflow["98"]["inputs"]["height"] = imagePromptDetail.height / 2;
+    console.log("imagePromptDetail.refinedVideoPrompt || imagePromptDetail.videoPrompt", imagePromptDetail, imagePromptDetail.refinedVideoPrompt, imagePromptDetail.videoPrompt)
+    workflow["93"]["inputs"]["text"] = JSON.stringify(imagePromptDetail.refinedVideoPrompt || imagePromptDetail.videoPrompt);
+    workflow["114"]["inputs"]["width"] = imagePromptDetail.width / 2;
+    workflow["114"]["inputs"]["height"] = imagePromptDetail.height / 2;
     workflow["97"]["inputs"]["image"] = imagePromptDetail.imageFile;
     workflow["108"]["inputs"]["filename_prefix"] = "video";
 
@@ -326,8 +337,6 @@ async function batchGenerateVideosComfyUI(imagePromptDetails) {
 
 
     const generateImage = async () => {
-      console.log("imagePromptDetail", imagePromptDetail);
-
       const outputfiles = await clients[availableClient].client.getOutputFiles(
         workflow,
         "video",
@@ -451,7 +460,7 @@ Please strictly adhere to the following JSON structure and content specification
 
 --------------------------------------------------------------------------------
 **Additional Considerations for Prompt Generation:**
-
+*   **Length limit**: make sure it is less than 2000. Make it compact and avoid white spaces
 *   **Granularity of Detail**: The LLM should understand that every field requires as much specific detail as possible, not generalizations. For example, instead of writing "a woman," write "a 25-year-old Chinese female with long black hair tied back with a silk ribbon, a slender build, wearing a flowing, pale blue Hanfu...".
 *   **Consistency and Diversity**: While the JSON structure must be strictly consistent, the content of each video prompt should be creative and diverse, reflecting the unique elements of different video types (e.g., martial arts, dance, drama, nature documentary, sci-fi action, motivational, commercial, fantasy).
 *   **Handling Null Values**: When a field is not applicable (e.g., wardrobe for an animal), the LLM should use "null" rather than an empty string or omitting the field, to maintain the integrity of the JSON structure.
@@ -559,7 +568,7 @@ Please strictly adhere to the following JSON structure and content specification
 
 --------------------------------------------------------------------------------
 **Additional Considerations for Prompt Generation:**
-
+*   **Length and formatting**: make sure it is less than 2000 tokens. Make it compact and avoid unnecessary white spaces such as spaces and new lines.
 *   **Granularity of Detail**: The LLM should understand that every field requires as much specific detail as possible, not generalizations. For example, instead of writing "a woman," write "a 25-year-old Chinese female with long black hair tied back with a silk ribbon, a slender build, wearing a flowing, pale blue Hanfu...".
 *   **Consistency and Diversity**: While the JSON structure must be strictly consistent, the content of each video prompt should be creative and diverse, reflecting the unique elements of different video types (e.g., martial arts, dance, drama, nature documentary, sci-fi action, motivational, commercial, fantasy).
 *   **Handling Null Values**: When a field is not applicable (e.g., wardrobe for an animal), the LLM should use "null" rather than an empty string or omitting the field, to maintain the integrity of the JSON structure.
@@ -836,10 +845,14 @@ You are an uncensored, helpful personal assistant here to assist the user with a
     `,
   };
 
+  const characterInfo = characters && characters.length > 0
+    ? `\n\nMain characters with detailed appearances:\n${characters.map(c => `- ${c.name}: ${c.appearance}`).join('\n')}`
+    : '';
+
   const prompt = {
     role: "user",
     content: `
-Please write a image prompt to create a cover image for the following story content: "${content}". The prompt should be detailed, specifying the surroundings, background, and style to match the genre type: ${genre} and style: ${style}. Include the characters' appearance and names as specified in this JSON: ${JSON.stringify(characters)}. The output should be concise, in plain text, and contain only the prompt.
+Please write a image prompt to create a cover image for the following story content: "${content}". The prompt should be detailed, specifying the surroundings, background, and style to match the genre type: ${genre} and style: ${style}.${characterInfo}\n\nIf characters are mentioned, use their detailed appearance descriptions in the prompt. The output should be concise, in plain text, and contain only the prompt.
     `,
   };
 
@@ -915,7 +928,9 @@ Always start with the main subject.
 
 Mention the visual style (e.g., photorealistic, oil painting, anime, 3D render, watercolor, cinematic).
 
-Include environmental context and lighting.
+I use image geeneration models that excel with clear, concrete descriptions
+The image model doesn't have context of the full story so always include full context in the prompt even if it was mentioned in previous scenes.
+***Include detailed environmental context as much as possible from the previous scene descriptions.***
 
 Add optional stylistic effects (e.g., fog, glow, bokeh, reflections, motion blur).
 
@@ -928,7 +943,8 @@ Ensure each element contributes to the visual clarity.
 
 Output Format:
 Always return results as:
-[style], [first subject] [action], [second subject] [action],  [environment & background details], [lighting], [extra effects] [environment]
+[style],  [first subject], [first subject details], [first subject] [action],  [second subject details], [second subject] [action],  [environment & background details], [lighting], [extra effects] [environment]
+include all details of characters details when they appear in the scene.
     ${lastSceneDescriptions.length > 0 ? `Below are the previous ${lastSceneDescriptions.length} scene descriptions for context:
     ***
     ${JSON.stringify(lastSceneDescriptions)}
@@ -939,16 +955,17 @@ Always return results as:
     ***
     ${JSON.stringify(sceneDescriptionChunk.map((sceneDescription) => sceneDescription))}
     *** 
-    create a image prompt based on the guidelines in the system message for each segment to capture the essence of the scence described by the segment, using your rich randomness or imagination to create different forms of reference images.
+    create a image prompt based on the guidelines in the system message for each segment to capture the essence of the scence described by the segment, using your rich randomness or imagination to create different forms of reference images. When characters appear, use their detailed appearance descriptions provided above.
 
     The imagePrompt should match the specified genre ${genre} and style: ${style}
+    ${characters && characters.length > 0 ? `\n\nMain characters in this story (use these detailed descriptions when they appear in scenes):\n${characters.map(c => `- ${c.name}: ${c.appearance}`).join('\n')}\n` : ''}
     Now output a valid raw json array in the format of [string] and make sure that the length of the output json array same as the input ${sceneDescriptionChunk.length}
   `;
     const prompt = {
       role: "user",
       content: promptText,
     };
-    if (messages.length > 5) {
+    if (messages.length > 10) {
       messages = [...messages.slice(Math.max(messages.length - 3, 0))];
     }
     messages.push(prompt);
@@ -1151,6 +1168,7 @@ Additional Considerations for Prompt Generation:
 3.Contextual Descriptions: When describing action, lighting, and sound effects, think about how these elements work together to create a specific **"tone"** and express it with vivid language.
 4.Language Requirements: All output should be clear, concise, and use professional filmmaking terminology.
     The videoPrompt should match the specified genre ${genre} and style: ${style}
+     ${characters && characters.length > 0 ? `\n\nMain characters in this story (use these detailed descriptions for subject fields when they appear in scenes):\n${characters.map(c => `- ${c.name}: ${c.appearance}`).join('\n')}\n` : ''}
      ${lastSceneDescriptions.length > 0 ? `Below are the previous ${lastSceneDescriptions.length} scene descriptions for context:
     ***
     ${JSON.stringify(lastSceneDescriptions)}
@@ -1163,7 +1181,7 @@ Additional Considerations for Prompt Generation:
     ${JSON.stringify(sceneDescriptionChunk)}
     *** 
 
-    Output the video prompts to capture the essence of the scence described by the sceneDescriptions and imagePrompts according to the above guidelines, using your rich randomness or imagination to create different forms of reference images.
+    Output the video prompts to capture the essence of the scence described by the sceneDescriptions and imagePrompts according to the above guidelines, using your rich randomness or imagination to create different forms of reference images. When characters appear, use their detailed appearance descriptions provided above in the subject description field.
     Now output a valid json array containing the video prompts as strings strictly in the structure of [string] and make sure that the length of the output json array same as the input ${sceneDescriptionChunk.length}
 `;
     const prompt = {
@@ -1441,6 +1459,103 @@ Output: Only provide the raw JSON string without any additional messages or form
   }, []);
 }
 
+async function extractCharactersWithAppearance(content) {
+  console.log("Extracting characters with detailed appearances from story");
+
+  const systemMessage = {
+    role: "system",
+    content: `
+You are an expert character analyst. Extract all main characters from stories and provide extremely detailed visual descriptions suitable for AI image generation.
+
+For each character, provide:
+- name: Character's full name
+- gender: male/female/other
+- appearance: Comprehensive visual description including:
+  * Age and age-related features
+  * Ethnicity/race and associated features
+  * Facial structure, shape, and distinctive features
+  * Eye color, shape, and expression
+  * Hair color, length, style, texture
+  * Skin tone and texture
+  * Body type, height, build
+  * Typical clothing style, colors, and materials
+  * Accessories, jewelry, or distinctive items
+  * Any scars, tattoos, or unique markings
+  * Overall aesthetic or visual style
+- voiceType: Description of voice characteristics
+
+**Keep appearance under 50 words**
+Be as specific and visual as possible. If details aren't in the story, infer them logically based on context.
+    `,
+  };
+
+  const prompt = {
+    role: "user",
+    content: `
+Extract all main characters from the following story. For each character, provide a JSON object with detailed appearance information.
+
+Format: [{"name": "character name", "gender": "male/female/other", "appearance": "extremely detailed visual description suitable for image generation", "voiceType": "voice characteristics"}]
+
+Be extremely specific about appearance. Include:
+- Age (e.g., "middle-aged woman in her 40s", "young boy around 8 years old")
+- Race/ethnicity (e.g., "East Asian", "African American", "Caucasian with Mediterranean features")
+- Facial features (e.g., "sharp angular jawline", "round face with high cheekbones", "almond-shaped green eyes")
+- Hair (e.g., "long flowing black hair with slight waves", "short cropped gray hair", "curly red hair in a ponytail")
+- Skin (e.g., "pale porcelain skin", "dark brown skin with warm undertones", "olive complexion")
+- Body type (e.g., "tall and lean athletic build", "short and stocky", "average height with muscular frame")
+- Clothing style (e.g., "elegant Victorian dress in deep purple", "worn leather jacket and jeans", "traditional Japanese kimono")
+- Distinctive features (e.g., "scar across left eyebrow", "always wears a silver locket", "crooked smile")
+
+Story:
+${content}
+
+Output ONLY the JSON array, no other text.
+    `,
+  };
+
+  const retry = 10;
+  let currentRetry = 0;
+
+  while (currentRetry < retry) {
+    try {
+      console.log(`Attempt #${currentRetry + 1}`);
+      const messages = [systemMessage, prompt];
+      const message = await generateTextOpenAI(messages, "ollama", "gpt-oss:20b");
+
+      let jsonContent = message.content.trim();
+
+      // Try to extract JSON if wrapped in markdown code blocks
+      const jsonMatch = jsonContent.match(/```(?:json)?\s*(\[[\s\S]*\])\s*```/);
+      if (jsonMatch) {
+        jsonContent = jsonMatch[1];
+      }
+
+      // Clean up common issues
+      jsonContent = jsonContent.replace(/```json/g, "").replace(/```/g, "").replace(/\.\.\./g, "");
+
+      const parsed = JSON.parse(jsonContent);
+
+      // Validate that we have a proper array with required fields
+      if (Array.isArray(parsed) && parsed.length > 0 &&
+        parsed.every(char => char.name && char.gender && char.appearance && char.voiceType)) {
+        console.log(`Successfully extracted ${parsed.length} characters`);
+        return parsed;
+      } else {
+        throw new Error("Invalid character data structure");
+      }
+    } catch (ex) {
+      console.log(`Extraction attempt ${currentRetry + 1} failed:`, ex.message);
+      currentRetry++;
+
+      if (currentRetry >= retry) {
+        throw new Error(`Failed to extract characters after ${retry} attempts: ${ex.message}`);
+      }
+    }
+  }
+
+  throw new Error("Failed to extract characters from story");
+}
+
 async function extractCharactersFromStory(content) {
   console.log("Extracting character from story");
   const systemMessage = {
@@ -1448,6 +1563,7 @@ async function extractCharactersFromStory(content) {
     content: `
     I will give you a story. 
     I want you to extract all main characters from the story into a json in the format of [{name, gender, appearance, voiceType}]
+    Keep appearance under 50 words
     For gender, appearance and voiceType, please use your best knowledge. You can make up gender, appearance and voiceType if not specified in the story
     `,
   };
@@ -1457,7 +1573,7 @@ async function extractCharactersFromStory(content) {
     role: "user",
     content: `
       For the following story, please extract all main characters into a JSON array with the format: [{"name": "character name", "gender": "character gender", "appearance": "detailed appearance", "voiceType": "character voice type"}].
-
+      **Keep appearance under 50 words**
       Only include characters that play a significant role in the story. If gender, appearance, or voice type is not specified, use your best judgment to make them up. Be very specific about the characters' appearance, including:
 
       Race
@@ -1475,7 +1591,7 @@ async function extractCharactersFromStory(content) {
   };
   messages.push(prompt);
 
-  const message = await generateTextOpenAI(messages, "ollama", "gpt-oss:20b");
+  const message = await generateTextOpenAI(messages, "ollama", "qwen3:30b");
 
   messages.push(message);
   const json = message.content
@@ -1502,8 +1618,7 @@ exports.generateContinousStoryScenePrompts = generateContinousStoryScenePrompts;
 exports.generateContinousStorySceneVideoPrompts = generateContinousStorySceneVideoPrompts;
 exports.batchRefineVideoPromptsComfyUI = batchRefineVideoPromptsComfyUI;
 exports.batchRefineVideoPromptsOllama = batchRefineVideoPromptsOllama;
-
-
+exports.extractCharactersWithAppearance = extractCharactersWithAppearance;
 exports.generateStoryContentByCharactor = generateStoryContentByCharactor;
 exports.extractCharactersFromStory = extractCharactersFromStory;
 exports.generateStoryCoverPrompt = generateStoryCoverPrompt;

@@ -13,7 +13,8 @@ const {
   speedUpAudio,
   generateStoryCoverPrompt,
   batchRefineVideoPromptsComfyUI,
-  batchRefineVideoPromptsOllama
+  batchRefineVideoPromptsOllama,
+  extractCharactersWithAppearance
 } = require("./resources_utils");
 const { getAudioDurationInSeconds } = require("get-audio-duration");
 const { createVideoClipConfigs } = require("./render_video");
@@ -34,7 +35,8 @@ async function generateScenes(title) {
       imageFile: story.coverImageFile,
       videoFile: story.coverVideoFile,
       prompt: story.style + ", " + story.coverImagePrompt,
-      refinedVideoPrompt: story.coverImagePrompt,
+      refinedVideoPrompt: story.enableVideoPromptRefinement ? story.coverImagePrompt : undefined,
+      videoPrompt: story.coverImagePrompt,
       audioDuration: story.titleAudioDuration,
       width,
       height,
@@ -58,8 +60,8 @@ async function generateScenes(title) {
         imageFile: contentChunk.sceneImageFile,
         videoFile: contentChunk.sceneVideoFile,
         prompt: story.style + ", " + contentChunk.sceneImagePrompt,
-        videoPrompt: contentChunk.videoPrompt,
-        refinedVideoPrompt: contentChunk.refinedVideoPrompt,
+        videoPrompt: contentChunk.videoPrompt || contentChunk.sceneImagePrompt,
+        refinedVideoPrompt: story.enableVideoPromptRefinement ? contentChunk.refinedVideoPrompt : undefined,
         audioDuration: contentChunk.audioDuration,
         width,
         height,
@@ -81,14 +83,18 @@ async function generateScenes(title) {
 
   await batchGenerateImagesByPrompts(imagesInfos);
   if (story.enableVideo) {
-    console.log("Refining video prompts");
-    await batchRefineVideoPromptsOllama(imagesInfos);
-    const contentChunkimagesInfos = imagesInfos.filter(info => !info.isCover);
+    if (story.enableVideoPromptRefinement) {
+      console.log("Refining video prompts");
+      await batchRefineVideoPromptsOllama(imagesInfos);
+      const contentChunkimagesInfos = imagesInfos.filter(info => !info.isCover);
 
-    story.contentChunks.forEach((_, index) => {
-      story.contentChunks[index].refinedVideoPrompt = JSON.stringify(contentChunkimagesInfos[index].refinedVideoPrompt);
-    })
-    fs.writeFileSync(storyJsonPath, JSON.stringify(story, null, 4));
+      story.contentChunks.forEach((_, index) => {
+        story.contentChunks[index].refinedVideoPrompt = JSON.stringify(contentChunkimagesInfos[index].refinedVideoPrompt);
+      })
+      fs.writeFileSync(storyJsonPath, JSON.stringify(story, null, 4));
+    } else {
+      console.log("Skipping video prompt refinement (disabled by flag)");
+    }
     await batchGenerateVideosByPrompts(imagesInfos);
   }
   fs.writeFileSync(storyJsonPath, JSON.stringify(story, null, 4));
@@ -358,6 +364,24 @@ async function splitStoryIntoChunks(title) {
   fs.writeFileSync(storyJsonPath, JSON.stringify(story, null, 4));
 }
 
+async function generateStoryExtractInfo(title) {
+  const storyFolder = createFolderIfNotExist(__dirname, "videos", title);
+  const storyJsonPath = path.resolve(storyFolder, "story.json");
+  const story = JSON.parse(fs.readFileSync(storyJsonPath, "utf8"));
+
+  if (story.characters && story.characters.length > 0) {
+    console.log("Characters already extracted, skipping");
+    return;
+  }
+
+  console.log("Extracting characters with detailed appearances from story");
+  const characters = await extractCharactersWithAppearance(story.content);
+  story.characters = characters;
+
+  console.log(`Extracted ${characters.length} characters:`, characters.map(c => c.name).join(", "));
+  fs.writeFileSync(storyJsonPath, JSON.stringify(story, null, 4));
+}
+
 async function generateTranscript(title) {
   const storyFolder = createFolderIfNotExist(__dirname, "videos", title);
   const storyJsonPath = path.resolve(storyFolder, "story.json");
@@ -386,7 +410,6 @@ async function generateScenePrompts(title) {
   if (!story.coverImagePrompt) {
     story.coverImagePrompt = (
       await generateStoryCoverPrompt(
-        story.title,
         [
           story.contentChunks
             .slice(0, 100)
@@ -447,6 +470,7 @@ async function generateScenePrompts(title) {
 }
 
 async function generateVideoResources(title) {
+  await generateStoryExtractInfo(title);
   await splitStoryIntoChunks(title);
   await generateScenePrompts(title);
 
@@ -456,6 +480,7 @@ async function generateVideoResources(title) {
 }
 
 exports.generateVideoResources = generateVideoResources;
+exports.generateStoryExtractInfo = generateStoryExtractInfo;
 exports.generateStoryAudios = generateStoryAudios;
 exports.generateTranscript = generateTranscript;
 exports.generateScenePrompts = generateScenePrompts;
