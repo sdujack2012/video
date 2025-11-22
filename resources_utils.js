@@ -1181,7 +1181,10 @@ Additional Considerations for Prompt Generation:
     ${JSON.stringify(sceneDescriptionChunk)}
     *** 
 
-    Output the video prompts to capture the essence of the scence described by the sceneDescriptions and imagePrompts according to the above guidelines, using your rich randomness or imagination to create different forms of reference images. When characters appear, use their detailed appearance descriptions provided above in the subject description field.
+    Output the video prompts to capture the essence of the scence described by the sceneDescriptions and imagePrompts according to the above guidelines, using your rich randomness or imagination to create different forms of reference images.
+    
+    When characters appear, use their detailed appearance descriptions provided above in the subject description field.
+    Only include the characters when it is mentioned in the scene description.
     Now output a valid json array containing the video prompts as strings strictly in the structure of [string] and make sure that the length of the output json array same as the input ${sceneDescriptionChunk.length}
 `;
     const prompt = {
@@ -1210,7 +1213,7 @@ Additional Considerations for Prompt Generation:
           if (
             parsed.length === sceneDescriptionChunk.length
           ) {
-            videoPrompts.push(...parsed.map(videoPrompt => ({ videoPrompt: JSON.stringify(videoPrompt) })));
+            videoPrompts.push(...parsed.map(videoPrompt => ({ videoPrompt: typeof videoPrompt === 'string' ? videoPrompt : JSON.stringify(videoPrompt) })));
             messages.push(message);
             fs.writeFileSync(
               cacheFile,

@@ -89,7 +89,7 @@ async function generateScenes(title) {
       const contentChunkimagesInfos = imagesInfos.filter(info => !info.isCover);
 
       story.contentChunks.forEach((_, index) => {
-        story.contentChunks[index].refinedVideoPrompt = JSON.stringify(contentChunkimagesInfos[index].refinedVideoPrompt);
+        story.contentChunks[index].refinedVideoPrompt = contentChunkimagesInfos[index].refinedVideoPrompt;
       })
       fs.writeFileSync(storyJsonPath, JSON.stringify(story, null, 4));
     } else {
@@ -462,7 +462,7 @@ async function generateScenePrompts(title) {
 
 
     chuncksWithVideoPrompts.forEach((_, index) => {
-      chuncksWithVideoPrompts[index].videoPrompt = JSON.stringify(videoPrompts[index].videoPrompt);
+      chuncksWithVideoPrompts[index].videoPrompt = videoPrompts[index].videoPrompt;
     })
 
     fs.writeFileSync(storyJsonPath, JSON.stringify(story, null, 4));
