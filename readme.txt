@@ -6,6 +6,8 @@ HF_HOME="E:\cache\hf"
 XDG_DATA_HOME="E:\cache"
 conda env config vars set HF_HUB_CACHE="E:\cache\hf\models" HF_TOKEN="xxxx" TTS_HOME="E:\cache" HF_HOME="E:\cache\hf" XDG_DATA_HOME="E:\cache"
 
+*************make sure to add virtual memory to 2x the ram******************
+
 or run conda env create -f ./conda_backup/environment.yml to recover the envirment
 2. This project also requires specific version of ffmpeg to work. The working version is located in ./backup/ffmpeg-N-107272-g03b2ed9a50-win64-gpl.zip
 
