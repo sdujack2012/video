@@ -149,12 +149,11 @@ function splitLongTextIntoChunks(content, tokenLimit = 30) {
       const chunkToMerge = restchunksToMerge[index];
       const isChinese = /[\u4e00-\u9fa5]/.test(currentChunk);
 
-      if (
-        (!isChinese && currentChunk.split(" ").length + chunkToMerge.split(" ").length >
-          tokenLimit || currentChunk.split(" ").length > 6) ||
-        (isChinese && currentChunk.length + chunkToMerge.length >
-          tokenLimit || currentChunk.length > 40)
-      ) {
+      const shouldStartNewChunk = isChinese
+        ? (currentChunk.length + chunkToMerge.length >= tokenLimit)
+        : (currentChunk.split(" ").length + chunkToMerge.split(" ").length >= tokenLimit);
+
+      if (shouldStartNewChunk) {
         chunks[chunks.length - 1] =
           chunks[chunks.length - 1].trim() + separator;
         chunks.push(chunkToMerge);
@@ -348,7 +347,10 @@ async function splitStoryIntoChunks(title) {
     );
 
     story.contentChunks = story.contentChunks.flatMap((contentChunk) => {
-      const currentSplitChunks = splitLongTextIntoChunks(contentChunk.content);
+      const currentSplitChunks = splitLongTextIntoChunks(
+        contentChunk.content,
+        story.splitTokenLimit
+      );
 
       return currentSplitChunks.map((content) => ({
         ...contentChunk,
@@ -356,9 +358,10 @@ async function splitStoryIntoChunks(title) {
       }));
     });
   } else {
-    story.contentChunks = splitLongTextIntoChunks(story.content, story.splitTokenLimit || undefined).map(
-      (content) => ({ content })
-    );
+    story.contentChunks = splitLongTextIntoChunks(
+      story.content,
+      story.splitTokenLimit
+    ).map((content) => ({ content }));
   }
 
   fs.writeFileSync(storyJsonPath, JSON.stringify(story, null, 4));

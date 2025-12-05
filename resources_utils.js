@@ -587,7 +587,7 @@ Please analyze the image and generate the video prompt following the structure a
         }
       ];
 
-      const message = await generateTextOpenAI(messages, "ollama", "gemma3");
+      const message = await generateTextOpenAI(messages, "ollama", "deepseek-r1:32b");
       imagePromptDetail.refinedVideoPrompt = message.content;
       console.log(`Refined video prompt generated for: ${imagePromptDetail.imageFile}`);
 
@@ -659,8 +659,34 @@ async function batchGenerateImagesComfyUI(imagePromptDetails) {
     // workflow["58"]["inputs"]["height"] = imagePromptDetail.height;
     // workflow["60"]["inputs"]["filename_prefix"] = "image";
 
+    // const workflow = JSON.parse(
+    //   fs.readFileSync("./comfyUI workflows/image_qwen_10steps.json")
+    // );
+
+    // workflow["3"]["inputs"]["seed"] = Math.floor(Math.random() * 4294967294);
+    // workflow["6"]["inputs"]["text"] =
+    //   imagePromptDetail.style +
+    //   ", " +
+    //   imagePromptDetail.prompt;
+    // workflow["58"]["inputs"]["width"] = imagePromptDetail.width;
+    // workflow["58"]["inputs"]["height"] = imagePromptDetail.height;
+    // workflow["60"]["inputs"]["filename_prefix"] = "image";
+
+    // const workflow = JSON.parse(
+    //   fs.readFileSync("./comfyUI workflows/image_qwen_10steps.json")
+    // );
+
+    // workflow["3"]["inputs"]["seed"] = Math.floor(Math.random() * 4294967294);
+    // workflow["6"]["inputs"]["text"] =
+    //   imagePromptDetail.style +
+    //   ", " +
+    //   imagePromptDetail.prompt;
+    // workflow["58"]["inputs"]["width"] = imagePromptDetail.width;
+    // workflow["58"]["inputs"]["height"] = imagePromptDetail.height;
+    // workflow["60"]["inputs"]["filename_prefix"] = "image";
+
     const workflow = JSON.parse(
-      fs.readFileSync("./comfyUI workflows/image_qwen_10steps.json")
+      fs.readFileSync("./comfyUI workflows/z_image_turbo.json")
     );
 
     workflow["3"]["inputs"]["seed"] = Math.floor(Math.random() * 4294967294);
@@ -668,9 +694,9 @@ async function batchGenerateImagesComfyUI(imagePromptDetails) {
       imagePromptDetail.style +
       ", " +
       imagePromptDetail.prompt;
-    workflow["58"]["inputs"]["width"] = imagePromptDetail.width;
-    workflow["58"]["inputs"]["height"] = imagePromptDetail.height;
-    workflow["60"]["inputs"]["filename_prefix"] = "image";
+    workflow["13"]["inputs"]["width"] = imagePromptDetail.width;
+    workflow["13"]["inputs"]["height"] = imagePromptDetail.height;
+    workflow["9"]["inputs"]["filename_prefix"] = "image";
 
     const generateImage = async () => {
       console.log("imagePromptDetail", imagePromptDetail);
@@ -859,7 +885,7 @@ Please write a image prompt to create a cover image for the following story cont
   const messages = [systemMessage, prompt];
 
   messages.push(prompt);
-  const message = await generateTextOpenAI(messages, "ollama", "gpt-oss:20b");
+  const message = await generateTextOpenAI(messages, "ollama", "deepseek-r1:32b");
   return message.content;
 }
 
@@ -978,7 +1004,7 @@ include all details of characters details when they appear in the scene.
       try {
         console.log(`Attempt #${currentRetry + 1}`);
         const regex = /\[[\s\S]{10,}\]/gm;
-        message = await generateTextOpenAI(messages, "ollama", "gpt-oss:20b");
+        message = await generateTextOpenAI(messages, "ollama", "deepseek-r1:32b");
         const matches = message.content.match(regex);
         if (matches && matches.length > 0) {
           const parsed = JSON.parse(matches[0]);
@@ -1204,7 +1230,7 @@ Additional Considerations for Prompt Generation:
       try {
         console.log(`Attempt #${currentRetry + 1}`);
         const regex = /\[[\s\S]{10,}\]/gm;
-        message = await generateTextOpenAI(messages, "ollama", "gpt-oss:20b");
+        message = await generateTextOpenAI(messages, "ollama", "deepseek-r1:32b");
         const matches = message.content.match(regex);
         if (matches && matches.length > 0) {
           const parsed = JSON.parse(matches[0]);
@@ -1316,7 +1342,7 @@ best quality, masterpiece, detailed, woman standing before fire, Jason Benjamin,
       try {
         console.log(`Attempt #${currentRetry + 1}`);
         const regex = /\{[\s\S]{10,}\}/gm;
-        message = await generateTextOpenAI(messages, "ollama", "gpt-oss:20b");
+        message = await generateTextOpenAI(messages, "ollama", "deepseek-r1:32b");
         const matches = message.content.match(regex);
         if (matches && matches.length > 0) {
           const parsed = JSON.parse(matches[0]);
@@ -1412,7 +1438,7 @@ Output: Only provide the raw JSON string without any additional messages or form
         const regex = /\[[\s\S]{10,}\]/gm;
         const message = await generateTextOpenAI(
           messages,
-          "ollama", "gpt-oss:20b");
+          "ollama", "deepseek-r1:32b");
         console.log("message", message);
         const matches = message.content.match(regex);
         if (matches && matches.length > 0) {
@@ -1523,7 +1549,7 @@ Output ONLY the JSON array, no other text.
     try {
       console.log(`Attempt #${currentRetry + 1}`);
       const messages = [systemMessage, prompt];
-      const message = await generateTextOpenAI(messages, "ollama", "gpt-oss:20b");
+      const message = await generateTextOpenAI(messages, "ollama", "deepseek-r1:32b");
 
       let jsonContent = message.content.trim();
 
@@ -1594,7 +1620,7 @@ async function extractCharactersFromStory(content) {
   };
   messages.push(prompt);
 
-  const message = await generateTextOpenAI(messages, "ollama", "qwen3:30b");
+  const message = await generateTextOpenAI(messages, "ollama", "deepseek-r1:32b");
 
   messages.push(message);
   const json = message.content
