@@ -9,10 +9,8 @@ const {
   generateContinousStoryScenePrompts,
   generateContinousStorySceneVideoPrompts,
   generateStoryContentByCharactor,
-  extractCharactersFromStory,
   speedUpAudio,
   generateStoryCoverPrompt,
-  batchRefineVideoPromptsComfyUI,
   batchRefineVideoPromptsOllama,
   extractCharactersWithAppearance
 } = require("./resources_utils");
@@ -339,7 +337,7 @@ async function splitStoryIntoChunks(title) {
 
   if (story.enableRoles) {
     story.characters =
-      story.characters || (await extractCharactersFromStory(story.content));
+      story.characters || (await extractCharactersWithAppearance(story.content, story.style, story.genre));
     fs.writeFileSync(storyJsonPath, JSON.stringify(story, null, 4));
     story.contentChunks = await generateStoryContentByCharactor(
       story.content,

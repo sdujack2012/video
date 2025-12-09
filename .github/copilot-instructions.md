@@ -83,7 +83,7 @@ This prevents VRAM exhaustion by limiting concurrent operations per GPU.
 
 ### Voice Assignment Strategy
 Gender-based voice pool allocation:
-- Extracts characters with `extractCharactersFromStory()` using LLM
+- Extracts characters with `extractCharactersWithAppearance()` using LLM
 - Assigns from `./resources/speakers/` (17 male, 10 female voices)
 - Falls back to narrator voice if character exceeds pool size
 - Narrator selection: `story.speakerFile` > genre default > `matt.mp3`
