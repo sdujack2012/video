@@ -217,7 +217,6 @@ const ComfyUIClient = class {
                 ((!filePrefix || file.filename.startsWith(filePrefix)) &&
                   (!fileExtension || file.filename.endsWith(fileExtension)))
             );
-            console.log("allFiles", allFiles);
             const output = [];
             for (const file of allFiles) {
               const blob = await this.getFile(

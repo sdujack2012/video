@@ -59,6 +59,114 @@ const framerate = 30;
 const transitionDuration = 0.5;
 const audioFadeOutDuration = 1;
 
+// Transition effects organized by mood/style
+const transitionEffects = {
+  // Soft, smooth transitions for calm/emotional scenes
+  soft: [
+    "fade",
+    "fadeblack",
+    "fadewhite",
+    "dissolve",
+    "pixelize",
+    "smoothleft",
+    "smoothright",
+    "smoothup",
+    "smoothdown",
+  ],
+
+  // Dynamic, energetic transitions for action/exciting scenes
+  dynamic: [
+    "wipeleft",
+    "wiperight",
+    "wipeup",
+    "wipedown",
+    "slideleft",
+    "slideright",
+    "slideup",
+    "slidedown",
+    "squeezev",
+    "squeezeh",
+    "zoomin",
+  ],
+
+  // Geometric/creative transitions for stylized content
+  geometric: [
+    "circlecrop",
+    "rectcrop",
+    "circleopen",
+    "circleclose",
+    "diagtl",
+    "diagtr",
+    "diagbl",
+    "diagbr",
+    "hlslice",
+    "hrslice",
+    "vuslice",
+    "vdslice",
+  ],
+
+  // Blur/distortion effects for dramatic scenes
+  dramatic: [
+    "hblur",
+    "radial",
+    "distance",
+    "fadefast",
+    "fadeslow",
+    "wipetl",
+    "wipetr",
+    "wipebl",
+    "wipebr",
+  ],
+
+  // Horror-specific eerie transitions
+  horror: [
+    "fadeblack",
+    "fadefast",
+    "distance",
+    "radial",
+    "hblur",
+    "circleclose",
+    "diagtl",
+    "diagbr",
+  ],
+
+  // Kid-friendly playful transitions
+  kid: [
+    "fade",
+    "dissolve",
+    "circleopen",
+    "circlecrop",
+    "zoomin",
+    "slideleft",
+    "slideright",
+    "pixelize",
+  ],
+};
+
+// Genre-specific transition settings
+const genreTransitionSettings = {
+  horror: {
+    effects: transitionEffects.horror,
+    duration: 0.6, // Slightly longer for suspense
+  },
+  horror_female_vocal: {
+    effects: transitionEffects.horror,
+    duration: 0.6,
+  },
+  mythology: {
+    effects: [...transitionEffects.soft, ...transitionEffects.geometric],
+    duration: 0.7, // Smoother, more epic feel
+  },
+  kid: {
+    effects: transitionEffects.kid,
+    duration: 0.4, // Snappier for kids
+  },
+  default: {
+    effects: [...transitionEffects.soft, ...transitionEffects.dynamic],
+    duration: 0.5,
+  },
+};
+
 const numGPUs = 2;
 module.exports = {
   sizeMapping,
@@ -73,6 +181,8 @@ module.exports = {
   framerate,
   audioFadeOutDuration,
   transitionDuration,
+  transitionEffects,
+  genreTransitionSettings,
   numGPUs,
   subtitleYs,
   screenSizeMapping,

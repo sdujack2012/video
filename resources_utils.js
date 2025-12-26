@@ -8,6 +8,7 @@ const {
   splitArrayIntoChunks,
   createFolderIfNotExist,
   registerExitCallback,
+  withComfyUIServers,
 } = require("./utils");
 const util = require("util");
 const exec = util.promisify(require("child_process").exec);
@@ -119,246 +120,277 @@ async function freeComfyUIMemory(client) {
 }
 
 async function batchGenerateAudiosComfyUI(audioDetails) {
-  const clients = observable([]);
-  const clientId = Math.floor(Math.random() * 4294967294);
+  // Check if any audio files need to be generated
+  const needsGeneration = audioDetails.some(detail => !fs.existsSync(detail.outputFile));
 
-  try {
-    const serverAddress1 = "127.0.0.1:8188";
-    const client1 = new ComfyUIClient(serverAddress1, clientId);
-    await client1.connect();
-    clients.push({ client: client1, free: true });
-  } catch (ex) {
-    console.log(ex);
+  if (!needsGeneration) {
+    console.log('All audio files already exist, skipping ComfyUI server startup');
+    return;
   }
 
-  try {
-    const serverAddress2 = "127.0.0.1:8189";
-    const client2 = new ComfyUIClient(serverAddress2, clientId);
-    await client2.connect();
-    clients.push({ client: client2, free: true });
-  } catch (ex) {
-    console.log(ex);
-  }
+  return await withComfyUIServers([8188, 8189], async () => {
+    const clients = observable([]);
+    const clientId = Math.floor(Math.random() * 4294967294);
 
-  const audioGenerates = [];
-  registerExitCallback(async () => {
-    clients.forEach(async (client) => {
-      await client.client.interrupt();
-      await freeComfyUIMemory(client.client);
-      await client.client.disconnect();
+    try {
+      const serverAddress1 = "127.0.0.1:8188";
+      const client1 = new ComfyUIClient(serverAddress1, clientId);
+      await client1.connect();
+      clients.push({ client: client1, free: true });
+    } catch (ex) {
+      console.log(ex);
+    }
+
+    try {
+      const serverAddress2 = "127.0.0.1:8189";
+      const client2 = new ComfyUIClient(serverAddress2, clientId);
+      await client2.connect();
+      clients.push({ client: client2, free: true });
+    } catch (ex) {
+      console.log(ex);
+    }
+
+    const audioGenerates = [];
+    registerExitCallback(async () => {
+      clients.forEach(async (client) => {
+        await client.client.interrupt();
+        await freeComfyUIMemory(client.client);
+        await client.client.disconnect();
+      });
     });
-  });
 
-  for (let audioDetail of audioDetails) {
-    if (fs.existsSync(audioDetail.outputFile)) continue;
-    await when(() => clients.some((clientConfig) => clientConfig.free));
-    const availableClient = clients.findIndex(
-      (clientConfig) => clientConfig.free
-    );
-    console.log("availableClient", availableClient);
+    const totalAudios = audioDetails.filter(detail => !fs.existsSync(detail.outputFile)).length;
+    let completedAudios = 0;
 
-    runInAction(() => {
-      clients[availableClient].free = false;
-    });
-
-    const indexTTS2 = JSON.parse(
-      fs.readFileSync("./comfyUI workflows/index_tts2.json")
-    );
-
-    indexTTS2["27"]["inputs"]["seed"] = Math.floor(
-      Math.random() * 4294967294
-    );
-    indexTTS2["27"]["inputs"]["text"] = audioDetail.text;
-    indexTTS2["29"]["inputs"]["audio"] = audioDetail.speakerVoiceFile;
-    indexTTS2["49"]["inputs"]["filename_prefix"] = "audio";
-
-    const generateAudio = async () => {
-      const outputfiles = await clients[availableClient].client.getOutputFiles(
-        indexTTS2,
-        "audio",
-        "mp3"
+    for (let audioDetail of audioDetails) {
+      if (fs.existsSync(audioDetail.outputFile)) continue;
+      await when(() => clients.some((clientConfig) => clientConfig.free));
+      const availableClient = clients.findIndex(
+        (clientConfig) => clientConfig.free
       );
-      const outputfile = outputfiles[0];
-      const buffer = Buffer.from(await outputfile.blob.arrayBuffer());
-
-      fs.writeFileSync(audioDetail.outputFile, buffer);
+      console.log("availableClient", availableClient);
 
       runInAction(() => {
-        clients[availableClient].free = true;
+        clients[availableClient].free = false;
       });
-    };
-    audioGenerates.push(generateAudio());
-  }
 
-  await Promise.all(audioGenerates);
-  await Promise.all(clients.map((client) =>
-    freeComfyUIMemory(client.client)
-  ));
-  await Promise.all(clients.map((client) => client.client.disconnect()));
+      const indexTTS2 = JSON.parse(
+        fs.readFileSync("./comfyUI workflows/index_tts2.json")
+      );
+
+      indexTTS2["27"]["inputs"]["seed"] = Math.floor(
+        Math.random() * 4294967294
+      );
+      indexTTS2["27"]["inputs"]["text"] = audioDetail.text;
+      indexTTS2["29"]["inputs"]["audio"] = audioDetail.speakerVoiceFile;
+      indexTTS2["49"]["inputs"]["filename_prefix"] = "audio";
+
+      const generateAudio = async () => {
+        const outputfiles = await clients[availableClient].client.getOutputFiles(
+          indexTTS2,
+          "audio",
+          "mp3"
+        );
+        const outputfile = outputfiles[0];
+        const buffer = Buffer.from(await outputfile.blob.arrayBuffer());
+
+        fs.writeFileSync(audioDetail.outputFile, buffer);
+
+        completedAudios++;
+        console.log(`Audio generation progress: ${completedAudios}/${totalAudios}`);
+
+        runInAction(() => {
+          clients[availableClient].free = true;
+        });
+      };
+      audioGenerates.push(generateAudio());
+    }
+
+    await Promise.all(audioGenerates);
+    await Promise.all(clients.map((client) =>
+      freeComfyUIMemory(client.client)
+    ));
+    await Promise.all(clients.map((client) => client.client.disconnect()));
+  });
 }
 
 async function batchGenerateVideosComfyUI(imagePromptDetails) {
-  const clients = observable([]);
-  const clientId = Math.floor(Math.random() * 4294967294);
+  // Check if any video files need to be generated
+  const needsGeneration = imagePromptDetails.some(detail => !fs.existsSync(detail.videoFile));
 
-  try {
-    const serverAddress1 = "127.0.0.1:8188";
-    const client1 = new ComfyUIClient(serverAddress1, clientId);
-    await client1.connect();
-    clients.push({ client: client1, free: true });
-  } catch (ex) {
-    console.log(ex);
+  if (!needsGeneration) {
+    console.log('All video files already exist, skipping ComfyUI server startup');
+    return;
   }
 
-  const imagesGenerates = [];
-  registerExitCallback(async () => {
-    clients.forEach(async (client) => {
-      await client.client.interrupt();
-      await freeComfyUIMemory(client.client);
-      await client.client.disconnect();
+  return await withComfyUIServers([8188], async () => {
+    const clients = observable([]);
+    const clientId = Math.floor(Math.random() * 4294967294);
+
+    try {
+      const serverAddress1 = "127.0.0.1:8188";
+      const client1 = new ComfyUIClient(serverAddress1, clientId);
+      await client1.connect();
+      clients.push({ client: client1, free: true });
+    } catch (ex) {
+      console.log(ex);
+    }
+
+    const imagesGenerates = [];
+    registerExitCallback(async () => {
+      clients.forEach(async (client) => {
+        await client.client.interrupt();
+        await freeComfyUIMemory(client.client);
+        await client.client.disconnect();
+      });
     });
-  });
 
-  for (let imagePromptDetail of imagePromptDetails) {
-    if (fs.existsSync(imagePromptDetail.videoFile)) continue;
-    await when(() => clients.some((clientConfig) => clientConfig.free));
-    const availableClient = clients.findIndex(
-      (clientConfig) => clientConfig.free
-    );
-    console.log("availableClient", availableClient);
+    const totalVideos = imagePromptDetails.filter(detail => !fs.existsSync(detail.videoFile)).length;
+    let completedVideos = 0;
 
-    runInAction(() => {
-      clients[availableClient].free = false;
-    });
-
-    // const workflow = JSON.parse(
-    //   fs.readFileSync("./comfyUI workflows/wan2.2-t2v-rapid-aio-gguf.json")
-    // );
-
-    // workflow["3"]["inputs"]["seed"] = Math.floor(Math.random() * 4294967294);
-    // workflow["5"]["inputs"]["text"] =
-    //   imagePromptDetail.style +
-    //   ", " +
-    //   imagePromptDetail.prompt;
-    // workflow["6"]["inputs"]["width"] = imagePromptDetail.width;
-    // workflow["6"]["inputs"]["height"] = imagePromptDetail.height;
-    // workflow["8"]["inputs"]["filename_prefix"] = "video";
-
-
-    // const workflow = JSON.parse(
-    //   fs.readFileSync("./comfyUI workflows/Rapid-AIO-Mega-t2v.json")
-    // );
-
-    // workflow["8"]["inputs"]["seed"] = Math.floor(Math.random() * 4294967294);
-    // workflow["9"]["inputs"]["text"] =
-    //   imagePromptDetail.style +
-    //   ", " +
-    //   imagePromptDetail.prompt;
-    // workflow["44"]["inputs"]["width"] = imagePromptDetail.width;
-    // workflow["44"]["inputs"]["height"] = imagePromptDetail.height;
-    // workflow["39"]["inputs"]["filename_prefix"] = "video";
-
-    // const workflow = JSON.parse(
-    //   fs.readFileSync("./comfyUI workflows/Rapid-AIO-Mega-i2v.json")
-    // );
-
-    // workflow["8"]["inputs"]["seed"] = Math.floor(Math.random() * 4294967294);
-    // workflow["9"]["inputs"]["text"] =
-    //   imagePromptDetail.style +
-    //   ", " +
-    //   imagePromptDetail.prompt;
-    // workflow["28"]["inputs"]["width"] = imagePromptDetail.width / 2;
-    // workflow["28"]["inputs"]["height"] = imagePromptDetail.height / 2;
-    // workflow["16"]["inputs"]["image"] = imagePromptDetail.imageFile;
-    // workflow["39"]["inputs"]["filename_prefix"] = "video";
-
-    // const workflow = JSON.parse(
-    //   fs.readFileSync("./comfyUI workflows/wan2.2_lighting.json")
-    // );
-
-    // workflow["57"]["inputs"]["noise_seed"] = Math.floor(Math.random() * 4294967294);
-    // workflow["58"]["inputs"]["noise_seed"] = Math.floor(Math.random() * 4294967294);
-    // workflow["6"]["inputs"]["text"] =
-    //   imagePromptDetail.style +
-    //   ", " +
-    //   imagePromptDetail.prompt;
-    // workflow["59"]["inputs"]["width"] = imagePromptDetail.width / 2;
-    // workflow["59"]["inputs"]["height"] = imagePromptDetail.height / 2;
-    // workflow["78"]["inputs"]["filename_prefix"] = "video";
-
-
-    // const workflow = JSON.parse(
-    //   fs.readFileSync("./comfyUI workflows/wan2.2_i2v.json")
-    // );
-
-    // workflow["86"]["inputs"]["noise_seed"] = Math.floor(Math.random() * 4294967294);
-    // workflow["93"]["inputs"]["text"] = imagePromptDetail.refinedVideoPrompt;
-    // workflow["98"]["inputs"]["width"] = imagePromptDetail.width / 2;
-    // workflow["98"]["inputs"]["height"] = imagePromptDetail.height / 2;
-    // workflow["97"]["inputs"]["image"] = imagePromptDetail.imageFile;
-    // workflow["108"]["inputs"]["filename_prefix"] = "video";
-
-    const workflow = JSON.parse(
-      fs.readFileSync("./comfyUI workflows/wan2.2_i2v_painter.json")
-    );
-    workflow["86"]["inputs"]["noise_seed"] = Math.floor(Math.random() * 4294967294);
-    console.log("imagePromptDetail.refinedVideoPrompt || imagePromptDetail.videoPrompt", imagePromptDetail, imagePromptDetail.refinedVideoPrompt, imagePromptDetail.videoPrompt)
-    workflow["93"]["inputs"]["text"] = JSON.stringify(imagePromptDetail.refinedVideoPrompt || imagePromptDetail.videoPrompt);
-    workflow["114"]["inputs"]["width"] = imagePromptDetail.width / 2;
-    workflow["114"]["inputs"]["height"] = imagePromptDetail.height / 2;
-    workflow["97"]["inputs"]["image"] = imagePromptDetail.imageFile;
-    workflow["108"]["inputs"]["filename_prefix"] = "video";
-
-    // const workflow = JSON.parse(
-    //   fs.readFileSync("./comfyUI workflows/wan2.2_lighting.json")
-    // );
-
-    // workflow["86"]["inputs"]["noise_seed"] = Math.floor(Math.random() * 4294967294);
-    // workflow["117"]["inputs"]["String"] =
-    //   imagePromptDetail.refinedVideoPrompt;
-    // workflow["98"]["inputs"]["width"] = imagePromptDetail.width / 2;
-    // workflow["98"]["inputs"]["height"] = imagePromptDetail.height / 2;
-    // workflow["97"]["inputs"]["image"] = imagePromptDetail.imageFile;
-    // workflow["108"]["inputs"]["filename_prefix"] = "video";
-
-
-    // const workflow = JSON.parse(
-    //   fs.readFileSync("./comfyUI workflows/wan2.2_t2v.json")
-    // );
-
-    // workflow["81"]["inputs"]["noise_seed"] = Math.floor(Math.random() * 4294967294);
-    // workflow["89"]["inputs"]["text"] =
-    //   imagePromptDetail.style +
-    //   ", " +
-    //   imagePromptDetail.prompt;
-    // workflow["74"]["inputs"]["width"] = imagePromptDetail.width / 2;
-    // workflow["74"]["inputs"]["height"] = imagePromptDetail.height / 2;
-    // workflow["80"]["inputs"]["filename_prefix"] = "video";
-
-
-    const generateImage = async () => {
-      const outputfiles = await clients[availableClient].client.getOutputFiles(
-        workflow,
-        "video",
-        "mp4"
+    for (let imagePromptDetail of imagePromptDetails) {
+      if (fs.existsSync(imagePromptDetail.videoFile)) continue;
+      await when(() => clients.some((clientConfig) => clientConfig.free));
+      const availableClient = clients.findIndex(
+        (clientConfig) => clientConfig.free
       );
-      const outputfile = outputfiles[0];
-      const buffer = Buffer.from(await outputfile.blob.arrayBuffer());
-
-      fs.writeFileSync(imagePromptDetail.videoFile, buffer);
+      console.log("availableClient", availableClient);
 
       runInAction(() => {
-        clients[availableClient].free = true;
+        clients[availableClient].free = false;
       });
-    };
-    imagesGenerates.push(generateImage());
-  }
 
-  await Promise.all(imagesGenerates);
-  await Promise.all(clients.map((client) =>
-    freeComfyUIMemory(client.client)
-  ));
-  await Promise.all(clients.map((client) => client.client.disconnect()));
+      // const workflow = JSON.parse(
+      //   fs.readFileSync("./comfyUI workflows/wan2.2-t2v-rapid-aio-gguf.json")
+      // );
+
+      // workflow["3"]["inputs"]["seed"] = Math.floor(Math.random() * 4294967294);
+      // workflow["5"]["inputs"]["text"] =
+      //   imagePromptDetail.style +
+      //   ", " +
+      //   imagePromptDetail.prompt;
+      // workflow["6"]["inputs"]["width"] = imagePromptDetail.width;
+      // workflow["6"]["inputs"]["height"] = imagePromptDetail.height;
+      // workflow["8"]["inputs"]["filename_prefix"] = "video";
+
+
+      // const workflow = JSON.parse(
+      //   fs.readFileSync("./comfyUI workflows/Rapid-AIO-Mega-t2v.json")
+      // );
+
+      // workflow["8"]["inputs"]["seed"] = Math.floor(Math.random() * 4294967294);
+      // workflow["9"]["inputs"]["text"] =
+      //   imagePromptDetail.style +
+      //   ", " +
+      //   imagePromptDetail.prompt;
+      // workflow["44"]["inputs"]["width"] = imagePromptDetail.width;
+      // workflow["44"]["inputs"]["height"] = imagePromptDetail.height;
+      // workflow["39"]["inputs"]["filename_prefix"] = "video";
+
+      // const workflow = JSON.parse(
+      //   fs.readFileSync("./comfyUI workflows/Rapid-AIO-Mega-i2v.json")
+      // );
+
+      // workflow["8"]["inputs"]["seed"] = Math.floor(Math.random() * 4294967294);
+      // workflow["9"]["inputs"]["text"] =
+      //   imagePromptDetail.style +
+      //   ", " +
+      //   imagePromptDetail.prompt;
+      // workflow["28"]["inputs"]["width"] = imagePromptDetail.width / 2;
+      // workflow["28"]["inputs"]["height"] = imagePromptDetail.height / 2;
+      // workflow["16"]["inputs"]["image"] = imagePromptDetail.imageFile;
+      // workflow["39"]["inputs"]["filename_prefix"] = "video";
+
+      // const workflow = JSON.parse(
+      //   fs.readFileSync("./comfyUI workflows/wan2.2_lighting.json")
+      // );
+
+      // workflow["57"]["inputs"]["noise_seed"] = Math.floor(Math.random() * 4294967294);
+      // workflow["58"]["inputs"]["noise_seed"] = Math.floor(Math.random() * 4294967294);
+      // workflow["6"]["inputs"]["text"] =
+      //   imagePromptDetail.style +
+      //   ", " +
+      //   imagePromptDetail.prompt;
+      // workflow["59"]["inputs"]["width"] = imagePromptDetail.width / 2;
+      // workflow["59"]["inputs"]["height"] = imagePromptDetail.height / 2;
+      // workflow["78"]["inputs"]["filename_prefix"] = "video";
+
+
+      // const workflow = JSON.parse(
+      //   fs.readFileSync("./comfyUI workflows/wan2.2_i2v.json")
+      // );
+
+      // workflow["86"]["inputs"]["noise_seed"] = Math.floor(Math.random() * 4294967294);
+      // workflow["93"]["inputs"]["text"] = imagePromptDetail.refinedVideoPrompt;
+      // workflow["98"]["inputs"]["width"] = imagePromptDetail.width / 2;
+      // workflow["98"]["inputs"]["height"] = imagePromptDetail.height / 2;
+      // workflow["97"]["inputs"]["image"] = imagePromptDetail.imageFile;
+      // workflow["108"]["inputs"]["filename_prefix"] = "video";
+
+      const workflow = JSON.parse(
+        fs.readFileSync("./comfyUI workflows/wan2.2_i2v_painter.json")
+      );
+      workflow["86"]["inputs"]["noise_seed"] = Math.floor(Math.random() * 4294967294);
+      workflow["93"]["inputs"]["text"] = JSON.stringify(imagePromptDetail.refinedVideoPrompt || imagePromptDetail.videoPrompt);
+      workflow["114"]["inputs"]["width"] = imagePromptDetail.width / 2;
+      workflow["114"]["inputs"]["height"] = imagePromptDetail.height / 2;
+      workflow["97"]["inputs"]["image"] = imagePromptDetail.imageFile;
+      workflow["108"]["inputs"]["filename_prefix"] = "video";
+
+      // const workflow = JSON.parse(
+      //   fs.readFileSync("./comfyUI workflows/wan2.2_lighting.json")
+      // );
+
+      // workflow["86"]["inputs"]["noise_seed"] = Math.floor(Math.random() * 4294967294);
+      // workflow["117"]["inputs"]["String"] =
+      //   imagePromptDetail.refinedVideoPrompt;
+      // workflow["98"]["inputs"]["width"] = imagePromptDetail.width / 2;
+      // workflow["98"]["inputs"]["height"] = imagePromptDetail.height / 2;
+      // workflow["97"]["inputs"]["image"] = imagePromptDetail.imageFile;
+      // workflow["108"]["inputs"]["filename_prefix"] = "video";
+
+
+      // const workflow = JSON.parse(
+      //   fs.readFileSync("./comfyUI workflows/wan2.2_t2v.json")
+      // );
+
+      // workflow["81"]["inputs"]["noise_seed"] = Math.floor(Math.random() * 4294967294);
+      // workflow["89"]["inputs"]["text"] =
+      //   imagePromptDetail.style +
+      //   ", " +
+      //   imagePromptDetail.prompt;
+      // workflow["74"]["inputs"]["width"] = imagePromptDetail.width / 2;
+      // workflow["74"]["inputs"]["height"] = imagePromptDetail.height / 2;
+      // workflow["80"]["inputs"]["filename_prefix"] = "video";
+
+
+      const generateImage = async () => {
+        const outputfiles = await clients[availableClient].client.getOutputFiles(
+          workflow,
+          "video",
+          "mp4"
+        );
+        const outputfile = outputfiles[0];
+        const buffer = Buffer.from(await outputfile.blob.arrayBuffer());
+
+        fs.writeFileSync(imagePromptDetail.videoFile, buffer);
+
+        completedVideos++;
+        console.log(`Video generation progress: ${completedVideos}/${totalVideos}`);
+
+        runInAction(() => {
+          clients[availableClient].free = true;
+        });
+      };
+      imagesGenerates.push(generateImage());
+    }
+
+    await Promise.all(imagesGenerates);
+    await Promise.all(clients.map((client) =>
+      freeComfyUIMemory(client.client)
+    ));
+    await Promise.all(clients.map((client) => client.client.disconnect()));
+  });
 }
 
 
@@ -466,7 +498,7 @@ Please analyze the image and generate the video prompt following the structure a
         }
       ];
 
-      const message = await generateTextOpenAI(messages, "ollama", "deepseek-r1:32b");
+      const message = await generateTextOpenAI(messages, "ollama", "gpt-oss:20b");
       imagePromptDetail.refinedVideoPrompt = message.content;
       console.log(`Refined video prompt generated for: ${imagePromptDetail.imageFile}`);
 
@@ -483,125 +515,141 @@ Please analyze the image and generate the video prompt following the structure a
 }
 
 async function batchGenerateImagesComfyUI(imagePromptDetails) {
-  const clients = observable([]);
-  const clientId = Math.floor(Math.random() * 4294967294);
+  // Check if any image files need to be generated
+  const needsGeneration = imagePromptDetails.some(detail => !fs.existsSync(detail.imageFile));
 
-  try {
-    const serverAddress1 = "127.0.0.1:8188";
-    const client1 = new ComfyUIClient(serverAddress1, clientId);
-    await client1.connect();
-    clients.push({ client: client1, free: true });
-  } catch (ex) {
-    console.log(ex);
+  if (!needsGeneration) {
+    console.log('All image files already exist, skipping ComfyUI server startup');
+    return;
   }
 
-  try {
-    const serverAddress2 = "127.0.0.1:8189";
-    const client2 = new ComfyUIClient(serverAddress2, clientId);
-    await client2.connect();
-    clients.push({ client: client2, free: true });
-  } catch (ex) {
-    console.log(ex);
-  }
+  return await withComfyUIServers([8188, 8189], async () => {
+    const clients = observable([]);
+    const clientId = Math.floor(Math.random() * 4294967294);
 
-  const imagesGenerates = [];
-  registerExitCallback(async () => {
-    clients.forEach(async (client) => {
-      await client.client.interrupt();
-      await freeComfyUIMemory(client.client);
-      await client.client.disconnect();
+    try {
+      const serverAddress1 = "127.0.0.1:8188";
+      const client1 = new ComfyUIClient(serverAddress1, clientId);
+      await client1.connect();
+      clients.push({ client: client1, free: true });
+    } catch (ex) {
+      console.log(ex);
+    }
+
+    try {
+      const serverAddress2 = "127.0.0.1:8189";
+      const client2 = new ComfyUIClient(serverAddress2, clientId);
+      await client2.connect();
+      clients.push({ client: client2, free: true });
+    } catch (ex) {
+      console.log(ex);
+    }
+
+    const imagesGenerates = [];
+    registerExitCallback(async () => {
+      clients.forEach(async (client) => {
+        await client.client.interrupt();
+        await freeComfyUIMemory(client.client);
+        await client.client.disconnect();
+      });
     });
-  });
 
-  for (let imagePromptDetail of imagePromptDetails) {
-    if (fs.existsSync(imagePromptDetail.imageFile)) continue;
-    await when(() => clients.some((clientConfig) => clientConfig.free));
-    const availableClient = clients.findIndex(
-      (clientConfig) => clientConfig.free
-    );
-    console.log("availableClient", availableClient);
+    const totalImages = imagePromptDetails.filter(detail => !fs.existsSync(detail.imageFile)).length;
+    let completedImages = 0;
 
-    runInAction(() => {
-      clients[availableClient].free = false;
-    });
-
-    // const workflow = JSON.parse(
-    //   fs.readFileSync("./comfyUI workflows/image_qwen_image.json")
-    // );
-
-    // workflow["3"]["inputs"]["seed"] = Math.floor(Math.random() * 4294967294);
-    // workflow["6"]["inputs"]["text"] =
-    //   imagePromptDetail.style +
-    //   ", " +
-    //   imagePromptDetail.prompt;
-    // workflow["58"]["inputs"]["width"] = imagePromptDetail.width;
-    // workflow["58"]["inputs"]["height"] = imagePromptDetail.height;
-    // workflow["60"]["inputs"]["filename_prefix"] = "image";
-
-    // const workflow = JSON.parse(
-    //   fs.readFileSync("./comfyUI workflows/image_qwen_10steps.json")
-    // );
-
-    // workflow["3"]["inputs"]["seed"] = Math.floor(Math.random() * 4294967294);
-    // workflow["6"]["inputs"]["text"] =
-    //   imagePromptDetail.style +
-    //   ", " +
-    //   imagePromptDetail.prompt;
-    // workflow["58"]["inputs"]["width"] = imagePromptDetail.width;
-    // workflow["58"]["inputs"]["height"] = imagePromptDetail.height;
-    // workflow["60"]["inputs"]["filename_prefix"] = "image";
-
-    // const workflow = JSON.parse(
-    //   fs.readFileSync("./comfyUI workflows/image_qwen_10steps.json")
-    // );
-
-    // workflow["3"]["inputs"]["seed"] = Math.floor(Math.random() * 4294967294);
-    // workflow["6"]["inputs"]["text"] =
-    //   imagePromptDetail.style +
-    //   ", " +
-    //   imagePromptDetail.prompt;
-    // workflow["58"]["inputs"]["width"] = imagePromptDetail.width;
-    // workflow["58"]["inputs"]["height"] = imagePromptDetail.height;
-    // workflow["60"]["inputs"]["filename_prefix"] = "image";
-
-    const workflow = JSON.parse(
-      fs.readFileSync("./comfyUI workflows/z_image_turbo.json")
-    );
-
-    workflow["3"]["inputs"]["seed"] = Math.floor(Math.random() * 4294967294);
-    workflow["6"]["inputs"]["text"] =
-      imagePromptDetail.style +
-      ", " +
-      imagePromptDetail.prompt;
-    workflow["13"]["inputs"]["width"] = imagePromptDetail.width;
-    workflow["13"]["inputs"]["height"] = imagePromptDetail.height;
-    workflow["9"]["inputs"]["filename_prefix"] = "image";
-
-    const generateImage = async () => {
-      console.log("imagePromptDetail", imagePromptDetail);
-
-      const outputfiles = await clients[availableClient].client.getOutputFiles(
-        workflow,
-        "image",
-        "png"
+    for (let imagePromptDetail of imagePromptDetails) {
+      if (fs.existsSync(imagePromptDetail.imageFile)) continue;
+      await when(() => clients.some((clientConfig) => clientConfig.free));
+      const availableClient = clients.findIndex(
+        (clientConfig) => clientConfig.free
       );
-      const outputfile = outputfiles[0];
-      const buffer = Buffer.from(await outputfile.blob.arrayBuffer());
-
-      fs.writeFileSync(imagePromptDetail.imageFile, buffer);
+      console.log("availableClient", availableClient);
 
       runInAction(() => {
-        clients[availableClient].free = true;
+        clients[availableClient].free = false;
       });
-    };
-    imagesGenerates.push(generateImage());
-  }
 
-  await Promise.all(imagesGenerates);
-  await Promise.all(clients.map((client) =>
-    freeComfyUIMemory(client.client)
-  ));
-  await Promise.all(clients.map((client) => client.client.disconnect()));
+      // const workflow = JSON.parse(
+      //   fs.readFileSync("./comfyUI workflows/image_qwen_image.json")
+      // );
+
+      // workflow["3"]["inputs"]["seed"] = Math.floor(Math.random() * 4294967294);
+      // workflow["6"]["inputs"]["text"] =
+      //   imagePromptDetail.style +
+      //   ", " +
+      //   imagePromptDetail.prompt;
+      // workflow["58"]["inputs"]["width"] = imagePromptDetail.width;
+      // workflow["58"]["inputs"]["height"] = imagePromptDetail.height;
+      // workflow["60"]["inputs"]["filename_prefix"] = "image";
+
+      // const workflow = JSON.parse(
+      //   fs.readFileSync("./comfyUI workflows/image_qwen_10steps.json")
+      // );
+
+      // workflow["3"]["inputs"]["seed"] = Math.floor(Math.random() * 4294967294);
+      // workflow["6"]["inputs"]["text"] =
+      //   imagePromptDetail.style +
+      //   ", " +
+      //   imagePromptDetail.prompt;
+      // workflow["58"]["inputs"]["width"] = imagePromptDetail.width;
+      // workflow["58"]["inputs"]["height"] = imagePromptDetail.height;
+      // workflow["60"]["inputs"]["filename_prefix"] = "image";
+
+      // const workflow = JSON.parse(
+      //   fs.readFileSync("./comfyUI workflows/image_qwen_10steps.json")
+      // );
+
+      // workflow["3"]["inputs"]["seed"] = Math.floor(Math.random() * 4294967294);
+      // workflow["6"]["inputs"]["text"] =
+      //   imagePromptDetail.style +
+      //   ", " +
+      //   imagePromptDetail.prompt;
+      // workflow["58"]["inputs"]["width"] = imagePromptDetail.width;
+      // workflow["58"]["inputs"]["height"] = imagePromptDetail.height;
+      // workflow["60"]["inputs"]["filename_prefix"] = "image";
+
+      const workflow = JSON.parse(
+        fs.readFileSync("./comfyUI workflows/z_image_turbo.json")
+      );
+
+      workflow["3"]["inputs"]["seed"] = Math.floor(Math.random() * 4294967294);
+      workflow["6"]["inputs"]["text"] =
+        imagePromptDetail.style +
+        ", " +
+        imagePromptDetail.prompt;
+      workflow["13"]["inputs"]["width"] = imagePromptDetail.width;
+      workflow["13"]["inputs"]["height"] = imagePromptDetail.height;
+      workflow["9"]["inputs"]["filename_prefix"] = "image";
+
+      const generateImage = async () => {
+        console.log("imagePromptDetail", imagePromptDetail);
+
+        const outputfiles = await clients[availableClient].client.getOutputFiles(
+          workflow,
+          "image",
+          "png"
+        );
+        const outputfile = outputfiles[0];
+        const buffer = Buffer.from(await outputfile.blob.arrayBuffer());
+
+        fs.writeFileSync(imagePromptDetail.imageFile, buffer);
+
+        completedImages++;
+        console.log(`Image generation progress: ${completedImages}/${totalImages}`);
+
+        runInAction(() => {
+          clients[availableClient].free = true;
+        });
+      };
+      imagesGenerates.push(generateImage());
+    }
+
+    await Promise.all(imagesGenerates);
+    await Promise.all(clients.map((client) =>
+      freeComfyUIMemory(client.client)
+    ));
+    await Promise.all(clients.map((client) => client.client.disconnect()));
+  });
 }
 
 async function generateAudio(text, speakerVoiceFile) {
@@ -764,7 +812,7 @@ Please write a image prompt to create a cover image for the following story cont
   const messages = [systemMessage, prompt];
 
   messages.push(prompt);
-  const message = await generateTextOpenAI(messages, "ollama", "deepseek-r1:32b");
+  const message = await generateTextOpenAI(messages, "ollama", "gpt-oss:20b");
   return message.content;
 }
 
@@ -841,7 +889,7 @@ Generate prompts that a cinematographer could use to set up an actual shot.`
     splitLimit
   );
 
-  const retry = 30;
+  const retry = 5;
   const contextSize = 5;
 
   //const message = await generateText(messages);
@@ -859,7 +907,8 @@ Generate prompts that a cinematographer could use to set up an actual shot.`
     // Enhanced prompt with explicit scene-to-prompt mapping
     const promptText = `Generate ${sceneDescriptionChunk.length} cinematic image prompts. Each prompt MUST correspond EXACTLY to its scene number.
 
-STRUCTURE (mandatory): [visual_style], [main_subject with FULL appearance], [action], [environment], [lighting], [camera angle], [effects]
+STRUCTURE (mandatory):
+[visual_style], [subject 1 with FULL appearance] [action],  [subject 2 with FULL appearance] [action], [subject 3 with FULL appearance] [action] (repeat if needed), [environment], [lighting], [camera angle], [effects]
 
 CHARACTER RULES (CRITICAL):
 ${characters && characters.length > 0 ? characters.map(c => `- ${c.name}: ${c.appearance}`).join('\n') : 'No characters defined'}
@@ -879,6 +928,7 @@ FOR EACH SCENE:
 3. WHERE it takes place
 4. HOW it's lit and framed
 5. WHAT atmosphere/mood
+6. Ensure all characters mentioned are included with FULL appearance details
 
 Output EXACTLY ${sceneDescriptionChunk.length} prompts as JSON array: ["prompt1", "prompt2", ...]
 Each prompt = one detailed sentence with all required elements.`;
@@ -901,7 +951,7 @@ Each prompt = one detailed sentence with all required elements.`;
       try {
         console.log(`Attempt #${currentRetry + 1}`);
         const regex = /\[[\s\S]{10,}\]/gm;
-        message = await generateTextOpenAI(messages, "ollama", "deepseek-r1:32b");
+        message = await generateTextOpenAI(messages, "ollama", "gpt-oss:20b");
         const matches = message.content.match(regex);
         if (matches && matches.length > 0) {
           const parsed = JSON.parse(matches[0]);
@@ -1005,7 +1055,30 @@ Each prompt = one detailed sentence with all required elements.`;
     }
 
     if (!generated) {
-      throw "Error creating story lines";
+      console.warn(`⚠ Max attempts (${retry}) reached. Using last generated prompts.`);
+      // Use the last parsed prompts even if they have quality issues
+      const regex = /\[[\s\S]{10,}\]/gm;
+      const matches = message?.content?.match(regex);
+      if (matches && matches.length > 0) {
+        const parsed = JSON.parse(matches[0]);
+        if (parsed.length === sceneDescriptionChunk.length) {
+          scenePrompts.push(...parsed);
+          messages.push(message);
+          fs.writeFileSync(
+            cacheFile,
+            JSON.stringify({
+              messages,
+              scenePrompts,
+              index,
+              splitLimit,
+            })
+          );
+        } else {
+          throw "Error creating story lines: Max attempts reached and last output has wrong length";
+        }
+      } else {
+        throw "Error creating story lines: Max attempts reached and no valid output";
+      }
     }
   }
 
@@ -1053,7 +1126,7 @@ async function generateContinousStorySceneVideoPrompts(
     splitLimit
   );
 
-  const retry = 30;
+  const retry = 5;
   //const message = await generateText(messages);
   for (; index < sceneDescriptionChunks.length; index++) {
     console.log(
@@ -1196,28 +1269,106 @@ Additional Considerations for Prompt Generation:
       try {
         console.log(`Attempt #${currentRetry + 1}`);
         const regex = /\[[\s\S]{10,}\]/gm;
-        message = await generateTextOpenAI(messages, "ollama", "deepseek-r1:32b");
+        message = await generateTextOpenAI(messages, "ollama", "gpt-oss:20b");
         const matches = message.content.match(regex);
         if (matches && matches.length > 0) {
           const parsed = JSON.parse(matches[0]);
           console.log(parsed, sceneDescriptionChunk);
 
-          if (
-            parsed.length === sceneDescriptionChunk.length
-          ) {
-            videoPrompts.push(...parsed.map(videoPrompt => ({ videoPrompt: typeof videoPrompt === 'string' ? videoPrompt : JSON.stringify(videoPrompt) })));
-            messages.push(message);
-            fs.writeFileSync(
-              cacheFile,
-              JSON.stringify({
-                messages,
-                videoPrompts,
-                index,
-                splitLimit,
-              })
-            );
-            generated = true;
-            break;
+          if (parsed.length === sceneDescriptionChunk.length) {
+            // Quality validation for video prompts
+            let hasQualityIssues = false;
+            let issueDetails = [];
+
+            for (let i = 0; i < parsed.length; i++) {
+              const videoPrompt = typeof parsed[i] === 'string' ? parsed[i] : JSON.stringify(parsed[i]);
+              const sceneInfo = sceneDescriptionChunk[i];
+              const scene = sceneInfo.sceneDescription;
+              const imagePrompt = sceneInfo.imagePrompt;
+
+              // Check 1: Video prompt should be sufficiently detailed
+              if (videoPrompt.length < 50) {
+                hasQualityIssues = true;
+                issueDetails.push(`Scene ${i + 1}: Video prompt too short (less than 50 characters)`);
+              }
+
+              // Check 2: Should mention camera motion or cinematography
+              if (!videoPrompt.match(/\b(camera|shot|pan|zoom|dolly|tracking|crane|static|handheld|steadicam|arc|orbit|motion|movement)\b/i)) {
+                hasQualityIssues = true;
+                issueDetails.push(`Scene ${i + 1}: Missing camera motion/cinematography details`);
+              }
+
+              // Check 3: Should include temporal/action elements for video
+              if (!videoPrompt.match(/\b(moving|action|walking|running|turning|flowing|rising|falling|dancing|fighting|sequence|0-1s|1-2s|2-3s|3-4s|4-5s)\b/i)) {
+                hasQualityIssues = true;
+                issueDetails.push(`Scene ${i + 1}: Missing temporal action/movement description`);
+              }
+
+              // Check 4: If characters mentioned in scene, should be in video prompt
+              if (characters && characters.length > 0) {
+                const mentionedChars = characters.filter(c =>
+                  scene.toLowerCase().includes(c.name.toLowerCase().split(' ')[0]) ||
+                  scene.toLowerCase().includes(c.name.toLowerCase())
+                );
+
+                for (const char of mentionedChars) {
+                  const charNameInPrompt = videoPrompt.toLowerCase().includes(char.name.toLowerCase());
+                  const charTraitsInPrompt = char.appearance.split(',')[0].toLowerCase();
+                  const hasCharDescription = videoPrompt.toLowerCase().includes(charTraitsInPrompt);
+
+                  if (!charNameInPrompt && !hasCharDescription) {
+                    hasQualityIssues = true;
+                    issueDetails.push(`Scene ${i + 1}: Character ${char.name} mentioned in scene but missing from video prompt`);
+                  }
+                }
+              }
+
+            }
+
+            if (!hasQualityIssues) {
+              console.log("✓ Video prompt quality validation passed", parsed.length);
+              videoPrompts.push(...parsed.map(videoPrompt => ({ videoPrompt: typeof videoPrompt === 'string' ? videoPrompt : JSON.stringify(videoPrompt) })));
+              messages.push(message);
+              fs.writeFileSync(
+                cacheFile,
+                JSON.stringify({
+                  messages,
+                  videoPrompts,
+                  index,
+                  splitLimit,
+                })
+              );
+              generated = true;
+              break;
+            } else {
+              console.warn(`✗ Video prompt quality issues detected (attempt ${currentRetry + 1}):`);
+              issueDetails.forEach(issue => console.warn(`  - ${issue}`));
+
+              // Add feedback to help LLM correct mistakes
+              if (currentRetry < retry - 1) {
+                messages.push({
+                  role: "user",
+                  content: `The video prompts have quality issues:
+${issueDetails.join('\n')}
+
+SCENES CONTEXT:
+${sceneDescriptionChunk.map((s, i) => `Scene ${i + 1}: 
+  Scene Description: "${s.sceneDescription}"
+  Image Prompt: "${s.imagePrompt}"`).join('\n\n')}
+
+${characters && characters.length > 0 ? `CHARACTER REFERENCES:
+${characters.map(c => `- ${c.name}: ${c.appearance}`).join('\n')}` : ''}
+
+Please regenerate the ${sceneDescriptionChunk.length} video prompts with:
+1. Detailed camera motion and cinematography (e.g., "smooth Steadicam arc", "slow lateral dolly")
+2. Temporal action sequences describing movement across 5 seconds (e.g., "0-1s: subject walks forward, 1-2s: turns head")
+3. Character names and full appearance details when they appear in scenes (use CHARACTER REFERENCES above)
+4. Rich cinematic details (lighting, composition, visual effects)
+
+Output ONLY the corrected JSON array (strings or JSON objects): ["prompt1", "prompt2", ...] or [{"shot": {...}, "subject": {...}, ...}, ...]`
+                });
+              }
+            }
           }
         }
         currentRetry++;
@@ -1228,7 +1379,30 @@ Additional Considerations for Prompt Generation:
     }
 
     if (!generated) {
-      throw "Error creating story lines";
+      console.warn(`⚠ Max attempts (${retry}) reached for video prompts. Using last generated prompts.`);
+      // Use the last parsed prompts even if they have quality issues
+      const regex = /\[[\s\S]{10,}\]/gm;
+      const matches = message?.content?.match(regex);
+      if (matches && matches.length > 0) {
+        const parsed = JSON.parse(matches[0]);
+        if (parsed.length === sceneDescriptionChunk.length) {
+          videoPrompts.push(...parsed.map(videoPrompt => ({ videoPrompt: typeof videoPrompt === 'string' ? videoPrompt : JSON.stringify(videoPrompt) })));
+          messages.push(message);
+          fs.writeFileSync(
+            cacheFile,
+            JSON.stringify({
+              messages,
+              videoPrompts,
+              index,
+              splitLimit,
+            })
+          );
+        } else {
+          throw "Error creating story lines: Max attempts reached and last output has wrong length";
+        }
+      } else {
+        throw "Error creating story lines: Max attempts reached and no valid output";
+      }
     }
   }
 
@@ -1298,7 +1472,7 @@ Output: Only provide the raw JSON string without any additional messages or form
         const regex = /\[[\s\S]{10,}\]/gm;
         const message = await generateTextOpenAI(
           messages,
-          "ollama", "deepseek-r1:32b");
+          "ollama", "gpt-oss:20b");
         console.log("message", message);
         const matches = message.content.match(regex);
         if (matches && matches.length > 0) {
@@ -1409,7 +1583,7 @@ Output ONLY the JSON array, no other text.
     try {
       console.log(`Attempt #${currentRetry + 1}`);
       const messages = [systemMessage, prompt];
-      const message = await generateTextOpenAI(messages, "ollama", "deepseek-r1:32b");
+      const message = await generateTextOpenAI(messages, "ollama", "gpt-oss:20b");
 
       let jsonContent = message.content.trim();
 

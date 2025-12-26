@@ -25,6 +25,7 @@ const {
   audioFadeOutDuration,
   subtitleYs,
   screenSizeMapping,
+  genreTransitionSettings,
 } = require("./config");
 
 async function renderVideo(topic) {
@@ -142,7 +143,8 @@ async function renderVideo(topic) {
         await renderVideoClipChunk(
           videoConfigClipChunk,
           audioVideoPath,
-          availableGpu
+          availableGpu,
+          story.genre
         );
         audioVideoPaths[index] = audioVideoPath;
       } catch (ex) {
@@ -251,19 +253,13 @@ async function renderVideo(topic) {
   console.log("time elapsed:", (Date.now() - current) / 60000);
 }
 
-async function renderVideoClipChunk(videoConfigClipChunk, outputFilePath, gpu) {
-  const xfadeEffects = [
-    "wipeleft",
-    "wiperight",
-    "wipeup",
-    "wipedown",
-    "slideleft",
-    "slideright",
-    "slideup",
-    "slidedown",
-    "circlecrop",
-    "rectcrop",
-  ];
+async function renderVideoClipChunk(videoConfigClipChunk, outputFilePath, gpu, genre = 'default') {
+  // Get genre-specific transition settings
+  const transitionSettings = genreTransitionSettings[genre] || genreTransitionSettings.default;
+  const xfadeEffects = transitionSettings.effects;
+  const effectDuration = transitionSettings.duration;
+
+  console.log(`Using ${genre} genre transitions (${xfadeEffects.length} effects, ${effectDuration}s duration)`);
 
   // join images with transition effects
   let previousOffset = 0;
@@ -277,13 +273,13 @@ async function renderVideoClipChunk(videoConfigClipChunk, outputFilePath, gpu) {
       const effect =
         xfadeEffects[Math.floor(Math.random() * xfadeEffects.length)];
       const offset =
-        videoConfigClip.duration + previousOffset - transitionDuration;
+        videoConfigClip.duration + previousOffset - effectDuration;
       previousOffset = offset;
       let transition = "";
 
       transition +=
         index === 0 ? "[0:v][1:v]" : `[vfade${index}][${index + 1}:v]`;
-      transition += `xfade=transition=${effect}:duration=${transitionDuration}:offset=${offset}`;
+      transition += `xfade=transition=${effect}:duration=${effectDuration}:offset=${offset}`;
 
       transition +=
         index === videoConfigClipChunk.length - 2
@@ -298,7 +294,7 @@ async function renderVideoClipChunk(videoConfigClipChunk, outputFilePath, gpu) {
       if (videoConfigClipChunk.length - 1 === index) return "";
       let transition = "";
       transition += index === 0 ? "[0:a][1:a]" : `[a${index}][${index + 1}:a]`;
-      transition += `acrossfade=d=${transitionDuration}:c1=tri:c2=tri`;
+      transition += `acrossfade=d=${effectDuration}:c1=tri:c2=tri`;
 
       transition +=
         index === videoConfigClipChunk.length - 2
