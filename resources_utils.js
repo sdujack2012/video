@@ -816,6 +816,249 @@ Please write a image prompt to create a cover image for the following story cont
   return message.content;
 }
 
+async function splitStoryAndGeneratePromptsWithLLM(
+  title,
+  fullStoryContent,
+  genre,
+  style,
+  characters
+) {
+  console.log("Using LLM to split story and generate prompts in one go");
+
+  const tempFolder = createFolderIfNotExist("temp", title);
+  const cacheFile = path.resolve(
+    tempFolder,
+    `llm_split_prompts_cache_${title}.json`
+  );
+
+  // Check if we have cached results
+  if (fs.existsSync(cacheFile)) {
+    console.log("Loading cached LLM split results");
+    const cached = JSON.parse(fs.readFileSync(cacheFile, "utf8"));
+    return {
+      sceneDescriptions: cached.sceneDescriptions,
+      scenePrompts: cached.scenePrompts
+    };
+  }
+
+  // Genre-specific visual guidelines
+  const genreGuidelines = {
+    horror: "Use dramatic shadows, desaturated colors, ominous atmosphere, tight framing, low-angle shots, dark color palette",
+    mythology: "Epic scale, ethereal lighting, rich vibrant colors, wide establishing shots, mystical elements, grand compositions",
+    kid: "Bright cheerful colors, soft warm lighting, whimsical playful details, eye-level perspective, inviting atmosphere"
+  };
+  const styleGuide = genreGuidelines[genre] || "Cinematic composition with balanced lighting and natural colors";
+
+  const systemPrompt = {
+    role: "system",
+    content: `You are a master cinematographer and visual prompt engineer specializing in ${genre} genre with ${style} style.
+
+Your task: Analyze a complete story, intelligently split it into visual scenes (breaking at natural scene transitions marked by *** or significant location/time changes), and generate detailed, filmable image prompts that capture the cinematic essence and emotional atmosphere for each scene.
+
+SCENE SPLITTING RULES:
+- Break at *** markers (absolute scene boundaries)
+- Break at significant location changes (e.g., indoor to outdoor, different room)
+- Break at major time transitions (e.g., day to night, different day)
+- Each scene should be around 5 seconds
+- Keep related actions in the same scene
+- **IMPORTANT: Create scenes of SIMILAR LENGTH - balance the amount of content per scene so they're roughly equal in word count (±20 words)**
+- Avoid very short scenes (<15 words) and very long scenes (>100 words)
+- Distribute story content evenly across all scenes for consistent pacing
+
+CORE PRINCIPLES:
+- Treat each scene as a film frame - consider composition, lighting, depth, and mood
+- Maintain visual continuity across scenes (consistent character appearances, locations, lighting conditions)
+- ${styleGuide}
+
+IMAGE PROMPT STRUCTURE (follow precisely):
+[cinematic_style], [main_subject with full appearance], [specific action/pose], [detailed environment/setting], [lighting type and quality], [camera angle/framing], [atmospheric effects]
+
+CHARACTER HANDLING (CRITICAL):
+${characters && characters.length > 0 ? characters.map(c => `- ${c.name}: ${c.appearance}`).join('\n') : 'No characters defined'}
+
+**Only include a character in the prompt if they are mentioned or implied in that specific scene.**
+**If a scene mentions "I" or "my", identify which character from context (usually Narrator).**
+**Include the character's FULL appearance description from above when they appear.**
+**Maintain consistent wardrobe, hair, features across all scenes**
+
+CINEMATIC TECHNIQUES TO INCLUDE:
+- Shot types: wide establishing, medium, close-up, over-shoulder
+- Camera angles: eye-level, low-angle, high-angle, Dutch tilt
+- Lighting: golden hour, dramatic side-lighting, soft diffused, harsh shadows, backlighting
+- Depth: shallow/deep focus, bokeh, foreground elements
+- Atmosphere: fog, mist, dust particles, rain, volumetric lighting
+
+EXAMPLE QUALITY:
+"Cinematic wide shot, 30-year-old Asian male detective in worn trench coat and fedora, standing in rain-soaked alley examining evidence, dark urban noir setting with neon signs reflecting in puddles, dramatic side-lighting from street lamp creating long shadows, low-angle perspective, heavy rain with visible droplets, film noir style"
+
+FOR EACH SCENE, DETERMINE:
+1. WHO is in this scene (narrator/character names or describe the subject with full appearance)
+2. What ACTION is happening
+REQUIREMENTS:
+1. Split at *** markers and natural scene boundaries
+2. Generate detailed cinematic image prompts for each scene matching the ${genre} genre and ${style} style
+3. Each prompt MUST follow the structure: [visual_style], [subject with FULL appearance] [action], [environment], [lighting], [camera angle], [effects]
+4. Each prompt = one detailed sentence with all required cinematic elements
+5. Ensure all scenes are of SIMILAR LENGTH (word count should be balanced within ±20 words) for consistent video pacing
+6. Ensure all characters mentioned are included with FULL appearance details
+
+Generate prompts that a cinematographer could use to set up an actual shot.
+
+Output a JSON object with this structure:
+{
+  "scenes": [
+    {
+      "sceneNumber": 1,
+      "description": "original story text for this scene",
+      "imagePrompt": "detailed cinematic prompt following the structure above"
+    },
+    ...
+  ]
+}`
+  };
+
+  const userPrompt = {
+    role: "user",
+    content: `Analyze this story and split it into scenes with image prompts:
+
+${fullStoryContent}
+
+Split at *** markers and natural scene boundaries. Generate detailed cinematic image prompts for each scene matching the ${genre} genre and ${style} style.
+
+CRITICAL: Ensure all scenes are of SIMILAR LENGTH (word count should be balanced within ±20 words). This is essential for consistent video pacing and timing.
+
+Output ONLY valid JSON following the structure specified.`
+  };
+
+  const retry = 5;
+  let currentRetry = 0;
+
+  while (currentRetry < retry) {
+    try {
+      console.log(`LLM split attempt ${currentRetry + 1}/${retry}`);
+
+      const message = await generateTextOpenAI(
+        [systemPrompt, userPrompt],
+        "ollama",
+        "gemma3:27b"
+      );
+
+      const jsonMatch = message.content.match(/\{[\s\S]*\}/);
+      if (!jsonMatch) {
+        throw new Error("No JSON found in response");
+      }
+
+      const parsed = JSON.parse(jsonMatch[0]);
+
+      if (!parsed.scenes || !Array.isArray(parsed.scenes) || parsed.scenes.length === 0) {
+        throw new Error("Invalid scenes array");
+      }
+
+      // Validate each scene has required fields
+      const validScenes = parsed.scenes.every(
+        scene => scene.description && scene.imagePrompt &&
+          scene.description.length > 10 && scene.imagePrompt.length > 20
+      );
+
+      if (!validScenes) {
+        throw new Error("Some scenes are missing required fields or are too short");
+      }
+
+      // Validate image prompt quality - should have multiple descriptive elements
+      const promptQualityIssues = [];
+      parsed.scenes.forEach((scene, idx) => {
+        const prompt = scene.imagePrompt;
+        const elementCount = prompt.split(',').length;
+
+        // Check if prompt has sufficient detail (at least 3 comma-separated elements)
+        if (elementCount < 3) {
+          promptQualityIssues.push(`Scene ${idx + 1}: Insufficient detail (${elementCount} elements, need 3+)`);
+        }
+
+        // Check if prompt includes visual style keywords
+        if (!prompt.match(/\b(cinematic|shot|wide|medium|close-up|angle|lighting|style|atmosphere)\b/i)) {
+          promptQualityIssues.push(`Scene ${idx + 1}: Missing cinematic terminology`);
+        }
+
+        // If characters exist, check if they're described when mentioned in scene
+        if (characters && characters.length > 0) {
+          const mentionedChars = characters.filter(c =>
+            scene.description.toLowerCase().includes(c.name.toLowerCase().split(' ')[0]) ||
+            scene.description.toLowerCase().includes(c.name.toLowerCase())
+          );
+
+          for (const char of mentionedChars) {
+            const hasCharInPrompt = prompt.toLowerCase().includes(char.name.toLowerCase()) ||
+              prompt.toLowerCase().includes(char.appearance.split(',')[0].toLowerCase());
+            if (!hasCharInPrompt) {
+              promptQualityIssues.push(`Scene ${idx + 1}: Character ${char.name} in scene but missing from prompt`);
+            }
+          }
+        }
+      });
+
+      if (promptQualityIssues.length > 0) {
+        console.warn(`⚠ Image prompt quality issues detected:`);
+        promptQualityIssues.slice(0, 5).forEach(issue => console.warn(`  - ${issue}`));
+        if (promptQualityIssues.length > 5) {
+          console.warn(`  ... and ${promptQualityIssues.length - 5} more issues`);
+        }
+
+        // If too many issues and we have retries left, regenerate
+        if (promptQualityIssues.length > parsed.scenes.length * 0.3 && currentRetry < retry - 1) {
+          throw new Error(`Too many prompt quality issues (${promptQualityIssues.length}/${parsed.scenes.length} scenes)`);
+        }
+      } else {
+        console.log(`✓ Image prompt quality validation passed`);
+      }
+
+      // Validate scene lengths are similar for consistent pacing
+      const sceneLengths = parsed.scenes.map(s => s.description.split(/\s+/).length);
+      const avgLength = sceneLengths.reduce((a, b) => a + b, 0) / sceneLengths.length;
+      const maxDeviation = Math.max(...sceneLengths.map(len => Math.abs(len - avgLength)));
+      const lengthVariance = maxDeviation / avgLength;
+
+      if (lengthVariance > 0.5) {
+        console.warn(`⚠ Scene length variance detected: ${(lengthVariance * 100).toFixed(1)}%`);
+        console.warn(`  Average: ${avgLength.toFixed(1)} words, Max deviation: ${maxDeviation.toFixed(1)} words`);
+        console.warn(`  Scene lengths: ${sceneLengths.join(', ')}`);
+
+        // If variance is too high and we have retries left, ask for rebalancing
+        if (lengthVariance > 0.7 && currentRetry < retry - 1) {
+          throw new Error(`Scene lengths too unbalanced (${(lengthVariance * 100).toFixed(1)}% variance). Need more even distribution.`);
+        }
+      } else {
+        console.log(`✓ Scene length consistency good: avg ${avgLength.toFixed(1)} words, variance ${(lengthVariance * 100).toFixed(1)}%`);
+      }
+
+      const sceneDescriptions = parsed.scenes.map(s => s.description);
+      const scenePrompts = parsed.scenes.map(s => s.imagePrompt);
+
+      console.log(`✓ Successfully split story into ${sceneDescriptions.length} scenes with prompts`);
+
+      // Cache the results
+      fs.writeFileSync(
+        cacheFile,
+        JSON.stringify({
+          sceneDescriptions,
+          scenePrompts,
+          timestamp: new Date().toISOString()
+        }, null, 2)
+      );
+
+      return { sceneDescriptions, scenePrompts };
+
+    } catch (ex) {
+      console.log(`Attempt ${currentRetry + 1} failed:`, ex.message);
+      currentRetry++;
+
+      if (currentRetry >= retry) {
+        throw new Error(`Failed to split story with LLM after ${retry} attempts: ${ex.message}`);
+      }
+    }
+  }
+}
+
 async function generateContinousStoryScenePrompts(
   title,
   sceneDescriptions,
@@ -1637,5 +1880,6 @@ exports.batchRefineVideoPromptsOllama = batchRefineVideoPromptsOllama;
 exports.extractCharactersWithAppearance = extractCharactersWithAppearance;
 exports.generateStoryContentByCharactor = generateStoryContentByCharactor;
 exports.generateStoryCoverPrompt = generateStoryCoverPrompt;
+exports.splitStoryAndGeneratePromptsWithLLM = splitStoryAndGeneratePromptsWithLLM;
 exports.speedUpAudio = speedUpAudio;
 exports.freeVRams = freeVRams;

@@ -12,7 +12,8 @@ const {
   speedUpAudio,
   generateStoryCoverPrompt,
   batchRefineVideoPromptsOllama,
-  extractCharactersWithAppearance
+  extractCharactersWithAppearance,
+  splitStoryAndGeneratePromptsWithLLM
 } = require("./resources_utils");
 const { getAudioDurationInSeconds } = require("get-audio-duration");
 const { createVideoClipConfigs } = require("./render_video");
@@ -335,6 +336,35 @@ async function splitStoryIntoChunks(title) {
     return;
   }
 
+  // Check if useLLMSplit flag is enabled
+  if (story.useLLMSplit) {
+    console.log("Using LLM-based splitting and prompt generation");
+
+    // Extract characters first if not already done
+    if (!story.characters || story.characters.length === 0) {
+      story.characters = await extractCharactersWithAppearance(story.content, story.style, story.genre);
+    }
+
+    // Use LLM to split story and generate prompts in one go
+    const { sceneDescriptions, scenePrompts } = await splitStoryAndGeneratePromptsWithLLM(
+      story.title,
+      story.content,
+      story.genre,
+      story.style,
+      story.characters
+    );
+
+    // Create content chunks with prompts already generated
+    story.contentChunks = sceneDescriptions.map((description, index) => ({
+      content: description,
+      sceneImagePrompt: scenePrompts[index]
+    }));
+
+    console.log(`✓ LLM split complete: ${story.contentChunks.length} scenes with prompts`);
+    fs.writeFileSync(storyJsonPath, JSON.stringify(story, null, 4));
+    return;
+  }
+
   if (story.enableRoles) {
     story.characters =
       story.characters || (await extractCharactersWithAppearance(story.content, story.style, story.genre));
@@ -432,19 +462,25 @@ async function generateScenePrompts(title) {
       (chunk) => !chunk.sceneImagePrompt
     );
 
-    const imagePrompts = await generateContinousStoryScenePrompts(
-      story.title,
-      chuncksWithoutImagePrompts.map(contentChunk => contentChunk.content),
-      story.genre,
-      story.style,
-      story.characters
-    );
+    // Only generate image prompts if they don't already exist (e.g., not from LLM split)
+    if (chuncksWithoutImagePrompts.length > 0) {
+      console.log(`Generating image prompts for ${chuncksWithoutImagePrompts.length} scenes`);
+      const imagePrompts = await generateContinousStoryScenePrompts(
+        story.title,
+        chuncksWithoutImagePrompts.map(contentChunk => contentChunk.content),
+        story.genre,
+        story.style,
+        story.characters
+      );
 
-    chuncksWithoutImagePrompts.forEach((_, index) => {
-      chuncksWithoutImagePrompts[index].sceneImagePrompt = imagePrompts[index];
-    })
+      chuncksWithoutImagePrompts.forEach((_, index) => {
+        chuncksWithoutImagePrompts[index].sceneImagePrompt = imagePrompts[index];
+      })
 
-    fs.writeFileSync(storyJsonPath, JSON.stringify(story, null, 4));
+      fs.writeFileSync(storyJsonPath, JSON.stringify(story, null, 4));
+    } else {
+      console.log("All scenes already have image prompts (likely from LLM split)");
+    }
   }
 
   if (story.enableVideo) {
