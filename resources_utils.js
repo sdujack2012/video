@@ -174,16 +174,28 @@ async function batchGenerateAudiosComfyUI(audioDetails) {
         clients[availableClient].free = false;
       });
 
+      // const indexTTS2 = JSON.parse(
+      //   fs.readFileSync("./comfyUI workflows/index_tts2.json")
+      // );
+
+      // indexTTS2["27"]["inputs"]["seed"] = Math.floor(
+      //   Math.random() * 4294967294
+      // );
+      // indexTTS2["27"]["inputs"]["text"] = audioDetail.text;
+      // indexTTS2["29"]["inputs"]["audio"] = audioDetail.speakerVoiceFile;
+      // indexTTS2["49"]["inputs"]["filename_prefix"] = "audio";
+
       const indexTTS2 = JSON.parse(
-        fs.readFileSync("./comfyUI workflows/index_tts2.json")
+        fs.readFileSync("./comfyUI workflows/index_tts2-v2.json")
       );
 
-      indexTTS2["27"]["inputs"]["seed"] = Math.floor(
+      indexTTS2["47"]["inputs"]["seed"] = Math.floor(
         Math.random() * 4294967294
       );
-      indexTTS2["27"]["inputs"]["text"] = audioDetail.text;
-      indexTTS2["29"]["inputs"]["audio"] = audioDetail.speakerVoiceFile;
-      indexTTS2["49"]["inputs"]["filename_prefix"] = "audio";
+      indexTTS2["65"]["inputs"]["value"] = audioDetail.text;
+      indexTTS2["135"]["inputs"]["audio"] = audioDetail.speakerVoiceFile;
+      indexTTS2["134"]["inputs"]["filename_prefix"] = "audio";
+
 
       const generateAudio = async () => {
         const outputfiles = await clients[availableClient].client.getOutputFiles(
@@ -327,15 +339,15 @@ async function batchGenerateVideosComfyUI(imagePromptDetails) {
       // workflow["97"]["inputs"]["image"] = imagePromptDetail.imageFile;
       // workflow["108"]["inputs"]["filename_prefix"] = "video";
 
-      const workflow = JSON.parse(
-        fs.readFileSync("./comfyUI workflows/wan2.2_i2v_painter.json")
-      );
-      workflow["86"]["inputs"]["noise_seed"] = Math.floor(Math.random() * 4294967294);
-      workflow["93"]["inputs"]["text"] = JSON.stringify(imagePromptDetail.refinedVideoPrompt || imagePromptDetail.videoPrompt);
-      workflow["114"]["inputs"]["width"] = imagePromptDetail.width / 2;
-      workflow["114"]["inputs"]["height"] = imagePromptDetail.height / 2;
-      workflow["97"]["inputs"]["image"] = imagePromptDetail.imageFile;
-      workflow["108"]["inputs"]["filename_prefix"] = "video";
+      // const workflow = JSON.parse(
+      //   fs.readFileSync("./comfyUI workflows/wan2.2_i2v_painter.json")
+      // );
+      // workflow["86"]["inputs"]["noise_seed"] = Math.floor(Math.random() * 4294967294);
+      // workflow["93"]["inputs"]["text"] = JSON.stringify(imagePromptDetail.refinedVideoPrompt || imagePromptDetail.videoPrompt);
+      // workflow["114"]["inputs"]["width"] = imagePromptDetail.width / 2;
+      // workflow["114"]["inputs"]["height"] = imagePromptDetail.height / 2;
+      // workflow["97"]["inputs"]["image"] = imagePromptDetail.imageFile;
+      // workflow["108"]["inputs"]["filename_prefix"] = "video";
 
       // const workflow = JSON.parse(
       //   fs.readFileSync("./comfyUI workflows/wan2.2_lighting.json")
@@ -363,6 +375,17 @@ async function batchGenerateVideosComfyUI(imagePromptDetails) {
       // workflow["74"]["inputs"]["height"] = imagePromptDetail.height / 2;
       // workflow["80"]["inputs"]["filename_prefix"] = "video";
 
+
+      const workflow = JSON.parse(
+        fs.readFileSync("./comfyUI workflows/ltx2_i2v.json")
+      );
+
+      workflow["118"]["inputs"]["noise_seed"] = Math.floor(Math.random() * 4294967294);
+      workflow["120"]["inputs"]["text"] = JSON.stringify(imagePromptDetail.refinedVideoPrompt || imagePromptDetail.videoPrompt);
+      workflow["102"]["inputs"]["resize_type.width"] = imagePromptDetail.width;
+      workflow["102"]["inputs"]["resize_type.height"] = imagePromptDetail.height;
+      workflow["98"]["inputs"]["image"] = imagePromptDetail.imageFile;
+      workflow["146"]["inputs"]["filename_prefix"] = "video";
 
       const generateImage = async () => {
         const outputfiles = await clients[availableClient].client.getOutputFiles(
@@ -1381,119 +1404,60 @@ async function generateContinousStorySceneVideoPrompts(
 
     const sceneDescriptionChunk = sceneDescriptionChunks[index];
     const promptText = `
-    You are an experienced film concept designer and video generation expert. Your task is to generate a highly detailed and professional video prompt in JSON format based on a given theme. This prompt will be used to guide advanced video generation models like Google Veo.
-Please strictly adhere to the following JSON structure and content specifications. Each field should be as specific, vivid, and imaginative as possible to capture the details of real-world filmmaking.
---------------------------------------------------------------------------------
+You are a master cinematographer and video generation expert specializing in ${genre} genre with ${style} style. Your task is to generate highly detailed, cinematic video prompts for LTX-2 video generation model following the official LTX-2 prompting guidelines.
 
-{
-    "shot": {
-      "composition": "string",
-        "camera_motion": "string", //make sure use dynamic camera motion
-          "frame_rate": "string",
-            "film_grain": "string"
-      // Optional fields, can be added for more detail:
-      // "duration": "string", // e.g., "8s"
-      // "resolution": "string", // e.g., "4K HDR"
-      // "focus": "string" // e.g., "manual locked on subjects, exposure locked"
-    },
-    "subject": {
-      "description": "string",
-        "wardrobe": "string" // Use "null" if the subject is an animal or has no specific clothing
-      // Optional fields:
-      // "pose": "string",
-      // "character_motion": "string",
-      // "name": "string", // For multiple subjects
-      // "nationality": "string" // For multiple subjects
-    },
-    "scene": {
-      "location": "string",
-        "time_of_day": "string",
-          "environment": "string"
-    },
-    "visual_details": {
-      "action": "string",
-        "props": "string" // Use "null" if there are no props
-      // Optional fields:
-      // "camera_cut": "string", // e.g., "after the line, camera cuts to client’s reaction"
-      // "action_sequence": "array of objects" // For phased actions, e.g., [1]
-    },
-    "cinematography": {
-      "lighting": "string",
-        "tone": "string"
-    },
-    "color_palette": "string"
-    // Optional fields:
-    // "output": { "quality": "string", "style": "string" }, // e.g., "8K HDR", "TV show quality footage" [2]
-    // "visual_rules": { "prohibited_elements": ["array of strings"] } // e.g., "STRICTLY NO on-screen subtitles" [3]
-  }
+CORE PRINCIPLES (LTX-2 Prompting Guide):
+• Write in a single flowing paragraph (NOT JSON format)
+• Use present tense verbs to describe movement and action
+• Include 4-8 descriptive sentences covering all key aspects
+• Paint a complete picture that flows naturally from beginning to end
 
---------------------------------------------------------------------------------
-Content Generation Guidelines (Please keep these principles in mind during generation):
-1.
-shot
-◦
-composition: Detail the shot type (e.g., wide-angle, medium shot, close-up, long shot), focal length (e.g., 35mm lens, 85mm lens, 50mm lens, 100mm macro telephoto, 26mm equivalent lens), camera equipment (e.g., Sony Venice, ARRI Alexa series, RED series, iPhone 15 Pro Max, DJI Inspire 3 drone), and depth of field (e.g., deep depth of field, shallow depth of field).
-◦
-camera_motion: Precisely describe how the camera moves, available motion: smooth Steadicam arc, slow lateral track, static, handheld shake, slow pan, drone orbit, rising crane - only use the motions mentioned here
-◦
-frame_rate: Specify a cinematic standard frame rate (e.g., 24fps), high frame rate (e.g., 30fps, 60fps), or slow-motion frame rate (e.g., 120fps).
-◦
-film_grain: Describe the type or presence of film grain (e.g., "clean digital, no grain", "Kodak 250D digital emulation with subtle grain overlay", "natural Kodak film grain", "visible 16mm grain").
-2.
-subject
-◦
-description: Provide an extremely detailed depiction of the subject, including their age (e.g., 25 years old, 23 years old, 40 years old, 92 years old), gender, ethnicity (e.g., Chinese female, Egyptian female, K-pop artist, European female, East Asian female, African male, Korean female, German female, Italian female, Japanese), body type (e.g., slender and athletic), hair (color, style), and any unique facial features. For non-human subjects (e.g., beluga whale, phoenix, emu, golden eagle, duck, snail), describe their physical characteristics in detail.
-◦
-wardrobe: Exhaustively describe clothing, accessories, shoes, and makeup, including materials, colors, styles, and any specific details (e.g., light blue Hanfu, gold sequin belly dance costume, tailored charcoal grey suit, Dior streetwear). If the subject is an animal or has no specific clothing, this field should be explicitly set to "null".
-3.
-scene
-◦
-location: Precisely specify the shooting location (e.g., misty lake shore, remote desert oasis, interior of a Gothic cathedral, quiet beach, modern gym, urban coffee shop, Japanese izakaya, interior of a train carriage, soccer field, Kowloon Walled City-like alleyway, New Zealand coast).
-◦
-time_of_day: Specify the time of day (e.g., dawn, early morning, morning, midday, afternoon, dusk, night).
-◦
-environment: Provide a detailed environmental description, capturing the atmosphere and background details (e.g., low-lying fog, starry sky and bonfire, beams of light from stained glass windows, soft morning mist and ocean waves, sunlit city streets).
-4.
-visual_details
-◦
-action: Describe specific, observable, and dynamic actions and event sequences (e.g., a rapid sword-fighting routine, fusion dance, vows and facial transformation, TikTok challenge dance, frustration while putting on socks, a beluga whale leaping out of the water).
-◦
-props: List all relevant props and elements in the scene (e.g., silver-hilted sword, bonfire, candelabras, matcha latte and cheesecake, futuristic motorcycle). If there are no props in the scene, this field should be explicitly set to "null".
-5.
-cinematography
-◦
-lighting: Detail the light sources, quality of light, color, and direction (e.g., natural dawn light softened by fog, bonfire as the primary light source, natural sunlight through stained glass windows, soft HDR reflections, warm tungsten light and natural window light).
-◦
-tone: Capture the abstract emotional or stylistic quality of the video (e.g., "fierce, elegant, fluid", "mystical, elegant, enchanting", "hyperrealistic with an ironic, dark comedic twist", "dreamy, serene, emotionally healing", "documentary realism", "epic, majestic, awe-inspiring", "wild, dynamic, unrestrained").
-6.
-color_palette
-◦
-Describe the dominant colors in the scene in detail, including hues and contrast (e.g., silver-blue, soft whites, and misty greys; rich earthy tones with golden highlights; natural stone greys and warm stained-glass colors; soft yellows, whites, and floral patterns).
---------------------------------------------------------------------------------
-Additional Considerations for Prompt Generation:
-1.Granularity of Detail: The LLM should understand that every field requires as much specific detail as possible, rather than generalizations. For example, instead of just writing "a woman," write "a 25-year-old Chinese female with long, black hair tied back with a silk ribbon, a slender build, wearing a flowing, light-blue Hanfu...".
-2.Consistency and Diversity: While the JSON structure must be strictly consistent, the content of each video prompt should be creative and diverse, reflecting the unique elements of different video genres (e.g., martial arts, dance, drama, nature documentary, sci-fi action, motivational, commercial, fantasy).
-3.Contextual Descriptions: When describing action, lighting, and sound effects, think about how these elements work together to create a specific **"tone"** and express it with vivid language.
-4.Language Requirements: All output should be clear, concise, and use professional filmmaking terminology.
-    The videoPrompt should match the specified genre ${genre} and style: ${style}
-     ${characters && characters.length > 0 ? `\n\nMain characters in this story (use these detailed descriptions for subject fields when they appear in scenes):\n${characters.map(c => `- ${c.name}: ${c.appearance}`).join('\n')}\n` : ''}
-     ${lastSceneDescriptions.length > 0 ? `Below are the previous ${lastSceneDescriptions.length} scene descriptions for context:
-    ***
-    ${JSON.stringify(lastSceneDescriptions)}
-    ***
-    
-    ` : ''}
+PROMPT STRUCTURE (follow this order):
+1. Establish the shot: Use cinematography terms (wide shot, medium shot, close-up, handheld, static, dolly, tracking, pan, crane, over-the-shoulder, etc.)
+2. Set the scene: Lighting conditions, color palette, textures, atmosphere (fog, rain, dust, smoke, etc.)
+3. Describe the action: Write as a natural sequence, flowing from beginning to end in present tense
+4. Define characters: Include age, ethnicity, hairstyle, clothing, distinguishing details. Use physical cues for emotions (avoid labels like "sad" - describe posture/gesture instead)
+5. Identify camera movement: Specify when/how the view shifts (pans, tracks, dollies, pushes in, pulls back, circles around, tilts, handheld tracking, arcs)
+6. Describe audio: Ambient sounds, music, dialogue (use quotation marks for speech, mention accent if needed)
 
-    Below is a sequence of ${sceneDescriptionChunk.length} continuous segments from a story, formatted as a JSON array, with the imagePrompt and sceneDescription:
-    ***
-    ${JSON.stringify(sceneDescriptionChunk)}
-    *** 
+WHAT WORKS WELL WITH LTX-2:
+• Cinematic compositions with thoughtful lighting and shallow depth of field
+• Emotive human moments, subtle gestures, facial nuances
+• Atmosphere: fog, mist, golden hour light, soft shadows, rain, reflections
+• Clear camera language: "slow dolly in", "handheld tracking", "camera pans right"
+• Stylized aesthetics matching ${genre} genre and ${style} style
+• Lighting/mood control: backlighting, color palettes, soft rim light, flickering candles
+• Natural motion: walking, turning, dancing (avoid complex physics like jumping/juggling)
 
-    Output the video prompts to capture the essence of the scence described by the sceneDescriptions and imagePrompts according to the above guidelines, using your rich randomness or imagination to create different forms of reference images.
-    
-    When characters appear, use their detailed appearance descriptions provided above in the subject description field.
-    Only include the characters when it is mentioned in the scene description.
-    Now output a valid json array containing the video prompts as strings strictly in the structure of [string] and make sure that the length of the output json array same as the input ${sceneDescriptionChunk.length}
+WHAT TO AVOID:
+• Emotional labels without visual cues (use posture/gesture/facial expression)
+• Text/logos/signage (model doesn't generate readable text)
+• Complex physics or chaotic motion
+• Scene complexity overload (too many characters/actions)
+• Overcomplicated prompts (keep focused and clear)
+
+${characters && characters.length > 0 ? `MAIN CHARACTERS (use these detailed descriptions when they appear):\n${characters.map(c => `- ${c.name}: ${c.appearance}`).join('\n')}\n` : ''}
+${lastSceneDescriptions.length > 0 ? `PREVIOUS SCENES FOR CONTEXT:\n${lastSceneDescriptions.slice(-5).map((s, i) => `${i + 1}. ${s}`).join('\n')}\n\n` : ''}
+SCENES TO GENERATE PROMPTS FOR:
+${sceneDescriptionChunk.map((s, i) => `Scene ${i + 1}:
+- Scene Description: "${s.sceneDescription}"
+- Image Prompt: "${s.imagePrompt}"`).join('\n\n')}
+
+FOR EACH SCENE:
+Generate ONE flowing paragraph (not JSON) that:
+• Starts with shot type and camera setup
+• Describes environment, lighting, and color palette
+• Details subject(s) with full appearance when characters appear
+• Describes action sequence in present tense
+• Includes camera movement throughout
+• Mentions ambient sounds or dialogue if relevant
+• Matches ${genre} genre and ${style} style
+
+EXAMPLE FORMAT:
+"A cinematic medium shot in warm golden hour light. The camera opens on a 30-year-old Asian woman with long black hair in a flowing blue dress, standing at the edge of a misty lake. Soft amber light filters through the fog as she turns slowly toward the camera, her expression contemplative. The camera dollies in gradually, maintaining focus on her face as atmospheric fog drifts between lens and subject. In the distance, birds call softly over gentle water sounds. The color palette is muted blues and warm golds with soft shadows. As she begins to walk forward, the camera tracks alongside her in smooth handheld motion."
+
+Output EXACTLY ${sceneDescriptionChunk.length} video prompts as a JSON array of strings: ["prompt1", "prompt2", ...]
+Each prompt should be one detailed flowing paragraph (NOT JSON objects).
 `;
     const prompt = {
       role: "user",
@@ -1510,7 +1474,7 @@ Additional Considerations for Prompt Generation:
 
     while (currentRetry < retry) {
       try {
-        console.log(`Attempt #${currentRetry + 1}`);
+        console.log(`Attempt #${currentRetry + 1} `);
         const regex = /\[[\s\S]{10,}\]/gm;
         message = await generateTextOpenAI(messages, "ollama", "gpt-oss:20b");
         const matches = message.content.match(regex);
@@ -1519,99 +1483,20 @@ Additional Considerations for Prompt Generation:
           console.log(parsed, sceneDescriptionChunk);
 
           if (parsed.length === sceneDescriptionChunk.length) {
-            // Quality validation for video prompts
-            let hasQualityIssues = false;
-            let issueDetails = [];
-
-            for (let i = 0; i < parsed.length; i++) {
-              const videoPrompt = typeof parsed[i] === 'string' ? parsed[i] : JSON.stringify(parsed[i]);
-              const sceneInfo = sceneDescriptionChunk[i];
-              const scene = sceneInfo.sceneDescription;
-              const imagePrompt = sceneInfo.imagePrompt;
-
-              // Check 1: Video prompt should be sufficiently detailed
-              if (videoPrompt.length < 50) {
-                hasQualityIssues = true;
-                issueDetails.push(`Scene ${i + 1}: Video prompt too short (less than 50 characters)`);
-              }
-
-              // Check 2: Should mention camera motion or cinematography
-              if (!videoPrompt.match(/\b(camera|shot|pan|zoom|dolly|tracking|crane|static|handheld|steadicam|arc|orbit|motion|movement)\b/i)) {
-                hasQualityIssues = true;
-                issueDetails.push(`Scene ${i + 1}: Missing camera motion/cinematography details`);
-              }
-
-              // Check 3: Should include temporal/action elements for video
-              if (!videoPrompt.match(/\b(moving|action|walking|running|turning|flowing|rising|falling|dancing|fighting|sequence|0-1s|1-2s|2-3s|3-4s|4-5s)\b/i)) {
-                hasQualityIssues = true;
-                issueDetails.push(`Scene ${i + 1}: Missing temporal action/movement description`);
-              }
-
-              // Check 4: If characters mentioned in scene, should be in video prompt
-              if (characters && characters.length > 0) {
-                const mentionedChars = characters.filter(c =>
-                  scene.toLowerCase().includes(c.name.toLowerCase().split(' ')[0]) ||
-                  scene.toLowerCase().includes(c.name.toLowerCase())
-                );
-
-                for (const char of mentionedChars) {
-                  const charNameInPrompt = videoPrompt.toLowerCase().includes(char.name.toLowerCase());
-                  const charTraitsInPrompt = char.appearance.split(',')[0].toLowerCase();
-                  const hasCharDescription = videoPrompt.toLowerCase().includes(charTraitsInPrompt);
-
-                  if (!charNameInPrompt && !hasCharDescription) {
-                    hasQualityIssues = true;
-                    issueDetails.push(`Scene ${i + 1}: Character ${char.name} mentioned in scene but missing from video prompt`);
-                  }
-                }
-              }
-
-            }
-
-            if (!hasQualityIssues) {
-              console.log("✓ Video prompt quality validation passed", parsed.length);
-              videoPrompts.push(...parsed.map(videoPrompt => ({ videoPrompt: typeof videoPrompt === 'string' ? videoPrompt : JSON.stringify(videoPrompt) })));
-              messages.push(message);
-              fs.writeFileSync(
-                cacheFile,
-                JSON.stringify({
-                  messages,
-                  videoPrompts,
-                  index,
-                  splitLimit,
-                })
-              );
-              generated = true;
-              break;
-            } else {
-              console.warn(`✗ Video prompt quality issues detected (attempt ${currentRetry + 1}):`);
-              issueDetails.forEach(issue => console.warn(`  - ${issue}`));
-
-              // Add feedback to help LLM correct mistakes
-              if (currentRetry < retry - 1) {
-                messages.push({
-                  role: "user",
-                  content: `The video prompts have quality issues:
-${issueDetails.join('\n')}
-
-SCENES CONTEXT:
-${sceneDescriptionChunk.map((s, i) => `Scene ${i + 1}: 
-  Scene Description: "${s.sceneDescription}"
-  Image Prompt: "${s.imagePrompt}"`).join('\n\n')}
-
-${characters && characters.length > 0 ? `CHARACTER REFERENCES:
-${characters.map(c => `- ${c.name}: ${c.appearance}`).join('\n')}` : ''}
-
-Please regenerate the ${sceneDescriptionChunk.length} video prompts with:
-1. Detailed camera motion and cinematography (e.g., "smooth Steadicam arc", "slow lateral dolly")
-2. Temporal action sequences describing movement across 5 seconds (e.g., "0-1s: subject walks forward, 1-2s: turns head")
-3. Character names and full appearance details when they appear in scenes (use CHARACTER REFERENCES above)
-4. Rich cinematic details (lighting, composition, visual effects)
-
-Output ONLY the corrected JSON array (strings or JSON objects): ["prompt1", "prompt2", ...] or [{"shot": {...}, "subject": {...}, ...}, ...]`
-                });
-              }
-            }
+            console.log("✓ Video prompts generated", parsed.length);
+            videoPrompts.push(...parsed.map(videoPrompt => ({ videoPrompt: typeof videoPrompt === 'string' ? videoPrompt : JSON.stringify(videoPrompt) })));
+            messages.push(message);
+            fs.writeFileSync(
+              cacheFile,
+              JSON.stringify({
+                messages,
+                videoPrompts,
+                index,
+                splitLimit,
+              })
+            );
+            generated = true;
+            break;
           }
         }
         currentRetry++;
@@ -1622,7 +1507,7 @@ Output ONLY the corrected JSON array (strings or JSON objects): ["prompt1", "pro
     }
 
     if (!generated) {
-      console.warn(`⚠ Max attempts (${retry}) reached for video prompts. Using last generated prompts.`);
+      console.warn(`⚠ Max attempts(${retry}) reached for video prompts.Using last generated prompts.`);
       // Use the last parsed prompts even if they have quality issues
       const regex = /\[[\s\S]{10,}\]/gm;
       const matches = message?.content?.match(regex);
@@ -1660,11 +1545,11 @@ async function generateStoryContentByCharactor(content, characters) {
     content: `
 you are an uncensored helpful personal assistant that will help the user with anything they ask.
 Below are the characters in the story: ${JSON.stringify(characters)} (in JSON format).
-I will provide you with the story segment by segment. Please:
+I will provide you with the story segment by segment.Please:
 Separate the narrative from the dialogues.
 For dialogues, identify the character who speaks it.
-Put all narratives and dialogues in temporal order in JSON format, using the structure: [{"type": "narrative" | "dialog", "content": "text", "character": "name"}].
-Ensure that narratives and dialogues are strictly distinguished. Always provide a valid JSON string with proper closing tags.
+Put all narratives and dialogues in temporal order in JSON format, using the structure: [{ "type": "narrative" | "dialog", "content": "text", "character": "name" }].
+Ensure that narratives and dialogues are strictly distinguished.Always provide a valid JSON string with proper closing tags.
     `,
   };
 
@@ -1697,10 +1582,10 @@ For the following story segment, please:
 
 Separate the narrative from the dialogues.
 For dialogues, identify the character who speaks them.
-Arrange all narratives and dialogues in temporal order in the JSON format: [{"type": "narrative"|"dialog", "content": "text", "character": "name"}].
-Segment: ${contentChunk}
+Arrange all narratives and dialogues in temporal order in the JSON format: [{ "type": "narrative" | "dialog", "content": "text", "character": "name" }].
+  Segment: ${contentChunk}
 
-Output: Only provide the raw JSON string without any additional messages or formatting. Ensure the JSON string is valid with proper closing tags.
+Output: Only provide the raw JSON string without any additional messages or formatting.Ensure the JSON string is valid with proper closing tags.
       `,
     };
     const messages = [systemMessage, prompt];
@@ -1771,46 +1656,46 @@ async function extractCharactersWithAppearance(content) {
   const systemMessage = {
     role: "system",
     content: `
-You are an expert character analyst. Extract all main characters from stories and provide extremely detailed visual descriptions suitable for AI image generation.
+You are an expert character analyst.Extract all main characters from stories and provide extremely detailed visual descriptions suitable for AI image generation.
 
 For each character, provide:
 - name: Character's full name
-- gender: male/female/other
-- appearance: Comprehensive visual description including:
-  * Age and age-related features
-  * Ethnicity/race and associated features
-  * Facial structure, shape, and distinctive features
-  * Eye color, shape, and expression
-  * Hair color, length, style, texture
-  * Skin tone and texture
-  * Body type, height, build
-  * Typical clothing style, colors, and materials
-  * Accessories, jewelry, or distinctive items
-  * Any scars, tattoos, or unique markings
-  * Overall aesthetic or visual style
-- voiceType: Description of voice characteristics
+  - gender: male / female / other
+    - appearance: Comprehensive visual description including:
+  * Age and age - related features
+  * Ethnicity / race and associated features
+    * Facial structure, shape, and distinctive features
+      * Eye color, shape, and expression
+        * Hair color, length, style, texture
+          * Skin tone and texture
+            * Body type, height, build
+              * Typical clothing style, colors, and materials
+                * Accessories, jewelry, or distinctive items
+                  * Any scars, tattoos, or unique markings
+                    * Overall aesthetic or visual style
+                      - voiceType: Description of voice characteristics
 
-**Keep appearance under 50 words**
-Be as specific and visual as possible. If details aren't in the story, infer them logically based on context.
-    `,
+                        ** Keep appearance under 50 words **
+                          Be as specific and visual as possible.If details aren't in the story, infer them logically based on context.
+                            `,
   };
 
   const prompt = {
     role: "user",
     content: `
-Extract all main characters from the following story. For each character, provide a JSON object with detailed appearance information.
+Extract all main characters from the following story.For each character, provide a JSON object with detailed appearance information.
 
-Format: [{"name": "character name", "gender": "male/female/other", "appearance": "extremely detailed visual description suitable for image generation", "voiceType": "voice characteristics"}]
+  Format: [{ "name": "character name", "gender": "male/female/other", "appearance": "extremely detailed visual description suitable for image generation", "voiceType": "voice characteristics" }]
 
-Be extremely specific about appearance. Include:
-- Age (e.g., "middle-aged woman in her 40s", "young boy around 8 years old")
-- Race/ethnicity (e.g., "East Asian", "African American", "Caucasian with Mediterranean features")
-- Facial features (e.g., "sharp angular jawline", "round face with high cheekbones", "almond-shaped green eyes")
-- Hair (e.g., "long flowing black hair with slight waves", "short cropped gray hair", "curly red hair in a ponytail")
-- Skin (e.g., "pale porcelain skin", "dark brown skin with warm undertones", "olive complexion")
-- Body type (e.g., "tall and lean athletic build", "short and stocky", "average height with muscular frame")
-- Clothing style (e.g., "elegant Victorian dress in deep purple", "worn leather jacket and jeans", "traditional Japanese kimono")
-- Distinctive features (e.g., "scar across left eyebrow", "always wears a silver locket", "crooked smile")
+Be extremely specific about appearance.Include:
+- Age(e.g., "middle-aged woman in her 40s", "young boy around 8 years old")
+  - Race / ethnicity(e.g., "East Asian", "African American", "Caucasian with Mediterranean features")
+  - Facial features(e.g., "sharp angular jawline", "round face with high cheekbones", "almond-shaped green eyes")
+    - Hair(e.g., "long flowing black hair with slight waves", "short cropped gray hair", "curly red hair in a ponytail")
+    - Skin(e.g., "pale porcelain skin", "dark brown skin with warm undertones", "olive complexion")
+    - Body type(e.g., "tall and lean athletic build", "short and stocky", "average height with muscular frame")
+      - Clothing style(e.g., "elegant Victorian dress in deep purple", "worn leather jacket and jeans", "traditional Japanese kimono")
+        - Distinctive features(e.g., "scar across left eyebrow", "always wears a silver locket", "crooked smile")
 
 Story:
 ${content}
@@ -1831,7 +1716,7 @@ Output ONLY the JSON array, no other text.
       let jsonContent = message.content.trim();
 
       // Try to extract JSON if wrapped in markdown code blocks
-      const jsonMatch = jsonContent.match(/```(?:json)?\s*(\[[\s\S]*\])\s*```/);
+      const jsonMatch = jsonContent.match(/```(?: json) ?\s * (\[[\s\S] *\]) \s * ```/);
       if (jsonMatch) {
         jsonContent = jsonMatch[1];
       }

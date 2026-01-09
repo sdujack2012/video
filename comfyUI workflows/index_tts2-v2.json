@@ -1,0 +1,128 @@
+{
+  "47": {
+    "inputs": {
+      "text": [
+        "65",
+        0
+      ],
+      "narrator_voice": "none",
+      "seed": 1552347959,
+      "enable_chunking": true,
+      "max_chars_per_chunk": 400,
+      "chunk_combination_method": "auto",
+      "silence_between_chunks_ms": 100,
+      "enable_audio_cache": true,
+      "batch_size": 0,
+      "TTS_engine": [
+        "123",
+        0
+      ],
+      "opt_narrator": [
+        "51",
+        0
+      ]
+    },
+    "class_type": "UnifiedTTSTextNode",
+    "_meta": {
+      "title": "🎤 TTS Text"
+    }
+  },
+  "51": {
+    "inputs": {
+      "voice_name": "none",
+      "reference_text": "",
+      "opt_audio_input": [
+        "135",
+        0
+      ]
+    },
+    "class_type": "CharacterVoicesNode",
+    "_meta": {
+      "title": "🎭 Character Voices"
+    }
+  },
+  "65": {
+    "inputs": {
+      "value": "On Tuesdays, the pigeons held parliament. [pause:5s] They debated the ethics of breadcrumbs and the metaphysics of flight. \nOne particularly philosophical pigeon named Thistle believed gravity was just a suggestion.\nHe once floated for three minutes straight, fueled by sheer conviction and a gust of rebellious wind."
+    },
+    "class_type": "PrimitiveStringMultiline",
+    "_meta": {
+      "title": "String (Multiline)"
+    }
+  },
+  "123": {
+    "inputs": {
+      "model_path": "IndexTTS-2",
+      "device": "auto",
+      "emotion_alpha": 0.7,
+      "use_random": false,
+      "max_text_tokens_per_segment": 120,
+      "interval_silence": 200,
+      "temperature": 0.8,
+      "top_p": 0.8,
+      "top_k": 31,
+      "do_sample": true,
+      "length_penalty": 0,
+      "num_beams": 3,
+      "repetition_penalty": 9.5,
+      "max_mel_tokens": 1500,
+      "use_fp16": true,
+      "use_deepspeed": true,
+      "use_cuda_kernel": "auto",
+      "use_torch_compile": false,
+      "use_accel": false,
+      "stream_return": false,
+      "more_segment_before": 0,
+      "low_vram": false,
+      "emotion_control": [
+        "125",
+        0
+      ]
+    },
+    "class_type": "IndexTTSEngineNode",
+    "_meta": {
+      "title": "⚙️ IndexTTS-2 Engine"
+    }
+  },
+  "125": {
+    "inputs": {
+      "Happy": 0,
+      "Angry": 0,
+      "Sad": 0,
+      "Surprised": 0,
+      "Afraid": 0,
+      "Disgusted": 0,
+      "Calm": 0,
+      "Melancholic": 0,
+      "emotion_radar_canvas": ""
+    },
+    "class_type": "IndexTTSEmotionOptionsNode",
+    "_meta": {
+      "title": "🌈 IndexTTS-2 Emotion Vectors"
+    }
+  },
+  "134": {
+    "inputs": {
+      "filename_prefix": "audio/ComfyUI",
+      "quality": "V0",
+      "audioUI": "",
+      "audio": [
+        "47",
+        0
+      ]
+    },
+    "class_type": "SaveAudioMP3",
+    "_meta": {
+      "title": "Save Audio (MP3)"
+    }
+  },
+  "135": {
+    "inputs": {
+      "audioUI": ""
+    },
+    "class_type": "LoadAudio",
+    "_meta": {
+      "title": "Load Audio"
+    }
+  }
+}

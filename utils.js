@@ -142,6 +142,36 @@ async function isServerRunning(port) {
   }
 }
 
+// Helper function to kill process using a specific port on Windows
+async function killProcessOnPort(port) {
+  try {
+    // Find PID using the port
+    const { stdout } = await exec(`netstat -ano | findstr :${port}`);
+    const lines = stdout.split('\n').filter(line => line.includes('LISTENING'));
+
+    if (lines.length > 0) {
+      // Extract PID from the last column
+      const pidMatch = lines[0].trim().split(/\s+/).pop();
+      if (pidMatch) {
+        const pid = parseInt(pidMatch);
+        console.log(`Found process ${pid} using port ${port}, killing it...`);
+
+        // Kill the process tree
+        await exec(`taskkill /F /T /PID ${pid}`);
+        console.log(`Successfully killed process on port ${port}`);
+
+        // Wait a bit for port to be released
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        return true;
+      }
+    }
+  } catch (ex) {
+    // Port might not be in use, which is fine
+    console.log(`No process found on port ${port} or already freed`);
+  }
+  return false;
+}
+
 // Helper function to start ComfyUI server
 async function startComfyUIServer(port) {
   const batchFiles = {
@@ -193,6 +223,9 @@ async function startComfyUIServer(port) {
 
 // Helper function to ensure server is running before connecting
 async function ensureServerRunning(port) {
+
+  // Kill any existing process on this port before starting
+  await killProcessOnPort(port);
   if (await isServerRunning(port)) {
     console.log(`ComfyUI server on port ${port} is already running`);
     return true;
