@@ -6,6 +6,7 @@ const exec = util.promisify(require("child_process").exec);
 const axios = require("axios");
 var Client = require("socket.engine").client;
 var { spawn } = require("child_process");
+const { observable } = require("mobx");
 
 function createFolderIfNotExist(...pathParts) {
   const folderPath = path.resolve(...pathParts);
@@ -277,7 +278,9 @@ async function withComfyUIServers(ports, callback) {
 
   // Register cleanup handler for process termination
   registerExitCallback(async () => {
-    await stopComfyUIServers();
+    ports.forEach(port =>
+      killProcessOnPort(port)
+    )
   });
 
   try {
@@ -291,13 +294,28 @@ async function withComfyUIServers(ports, callback) {
     });
 
     await Promise.all(startPromises);
+    const clients = observable([]);
 
+    for (let port of ports) {
+      try {
+        const serverAddress = `127.0.0.1:${port}`;
+        const clientId = Math.floor(Math.random() * 4294967294);
+        const client = new ComfyUIClient(serverAddress, clientId);
+        await client.connect();
+
+        clients.push({ client: client, free: true });
+      } catch (ex) {
+        console.log(ex);
+      }
+    }
     // Execute the callback with servers running
     return await callback();
 
   } finally {
     // Always stop servers when done, even if callback throws
-    await stopComfyUIServers();
+    ports.forEach(port =>
+      killProcessOnPort(port)
+    )
   }
 }
 

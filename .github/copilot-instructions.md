@@ -44,7 +44,6 @@ Runs dual ComfyUI servers (127.0.0.1:8188 and :8189) for parallel GPU utilizatio
 - Custom WebSocket client in `comfyui_client.js`
 - Workflows stored in `comfyUI workflows/` (JSON format, ~30 files, some deprecated)
 - Active workflows: `wan2.2_i2v.json` (image-to-video), `qwen3_vl.json` (vision-language), `free_memory.json` (VRAM cleanup)
-- Memory management: `freeComfyUIMemory()` runs between tasks to prevent VRAM exhaustion
 
 ## Key Patterns
 
@@ -140,7 +139,6 @@ Used in `generateTextOpenAI()` for story analysis and prompt generation.
 **Local Models** (Ollama):
 - `llama3_custom` and `deepseek-r1:7b` run locally via Ollama
 - Used for text generation tasks when not using cloud APIs
-- Automatically free VRAM via `freeVRams()` when needed
 
 ## Common Gotchas
 
@@ -185,7 +183,7 @@ videos/<title>/
 ### Image/Video Generation
 - ComfyUI workflows using various models (Flux, SDXL Lightning, Wan 2.2)
 - Image-to-video pipelines for scene animation when `enableVideo: true`
-- Prompt refinement: `batchRefineVideoPromptsOllama()` improves prompts before generation
+
 
 ## When Modifying Code
 

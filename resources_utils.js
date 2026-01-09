@@ -7,13 +7,11 @@ const {
   executeExternalHelper,
   splitArrayIntoChunks,
   createFolderIfNotExist,
-  registerExitCallback,
   withComfyUIServers,
 } = require("./utils");
 const util = require("util");
 const exec = util.promisify(require("child_process").exec);
-const { ComfyUIClient } = require("./comfyui_client");
-const { observable, when, runInAction } = require("mobx");
+const { when, runInAction } = require("mobx");
 
 async function generateTextOpenAI(messages, provider, model) {
   if (provider === "ollama") {
@@ -47,78 +45,6 @@ async function generateTextOpenAI(messages, provider, model) {
   }
 }
 
-
-async function generateTextComfyui(client, { prompt, image, model }) {
-  const indexTTS2 = JSON.parse(
-    fs.readFileSync("./comfyUI workflows/qwen3_vl.json")
-  );
-
-  indexTTS2["114"]["inputs"]["seed"] = Math.floor(
-    Math.random() * 4294967294
-  );
-  indexTTS2["114"]["inputs"]["custom_prompt"] = prompt;
-  indexTTS2["97"]["inputs"]["image"] = image;
-  indexTTS2["114"]["inputs"]["model_name"] = model;
-
-  const outputTexts = await client.getOutputText(
-    indexTTS2,
-    "txt",
-    "txt"
-  );
-
-  return outputTexts[0];
-}
-
-async function freeVRams() {
-  try {
-    await axios.post(
-      "http://localhost:11434/api/generate",
-      '{"model": "deepseek-r1:7b", "keep_alive": 0}',
-      {
-        headers: {
-          "Content-Type": "application/x-www-form-urlencoded",
-        },
-      }
-    );
-  } catch (ex) {
-    console.error(ex);
-  }
-}
-
-async function generateImage(prompt, width, height) {
-  const response = await axios.get(
-    `http://127.0.0.1:8188/text2image`,
-    {
-      params: {
-        prompt,
-        width,
-        height,
-        num_inference_steps: 30,
-      },
-    },
-    {
-      headers: {
-        "Content-Type": "application/json",
-        Accept: "application/json",
-      },
-    }
-  );
-  return response.data.data;
-}
-
-async function freeComfyUIMemory(client) {
-  try {
-    const freeMemoryWorkflow = JSON.parse(
-      fs.readFileSync("./comfyUI workflows/free_memory.json")
-    );
-    await client.execute(
-      freeMemoryWorkflow
-    );
-  } catch (ex) {
-    console.log(ex);
-  }
-}
-
 async function batchGenerateAudiosComfyUI(audioDetails) {
   // Check if any audio files need to be generated
   const needsGeneration = audioDetails.some(detail => !fs.existsSync(detail.outputFile));
@@ -127,37 +53,9 @@ async function batchGenerateAudiosComfyUI(audioDetails) {
     console.log('All audio files already exist, skipping ComfyUI server startup');
     return;
   }
-
-  return await withComfyUIServers([8188, 8189], async () => {
-    const clients = observable([]);
-    const clientId = Math.floor(Math.random() * 4294967294);
-
-    try {
-      const serverAddress1 = "127.0.0.1:8188";
-      const client1 = new ComfyUIClient(serverAddress1, clientId);
-      await client1.connect();
-      clients.push({ client: client1, free: true });
-    } catch (ex) {
-      console.log(ex);
-    }
-
-    try {
-      const serverAddress2 = "127.0.0.1:8189";
-      const client2 = new ComfyUIClient(serverAddress2, clientId);
-      await client2.connect();
-      clients.push({ client: client2, free: true });
-    } catch (ex) {
-      console.log(ex);
-    }
+  return await withComfyUIServers([8188, 8189], async (clients) => {
 
     const audioGenerates = [];
-    registerExitCallback(async () => {
-      clients.forEach(async (client) => {
-        await client.client.interrupt();
-        await freeComfyUIMemory(client.client);
-        await client.client.disconnect();
-      });
-    });
 
     const totalAudios = audioDetails.filter(detail => !fs.existsSync(detail.outputFile)).length;
     let completedAudios = 0;
@@ -219,10 +117,6 @@ async function batchGenerateAudiosComfyUI(audioDetails) {
     }
 
     await Promise.all(audioGenerates);
-    await Promise.all(clients.map((client) =>
-      freeComfyUIMemory(client.client)
-    ));
-    await Promise.all(clients.map((client) => client.client.disconnect()));
   });
 }
 
@@ -234,28 +128,9 @@ async function batchGenerateVideosComfyUI(imagePromptDetails) {
     console.log('All video files already exist, skipping ComfyUI server startup');
     return;
   }
-
-  return await withComfyUIServers([8188], async () => {
-    const clients = observable([]);
-    const clientId = Math.floor(Math.random() * 4294967294);
-
-    try {
-      const serverAddress1 = "127.0.0.1:8188";
-      const client1 = new ComfyUIClient(serverAddress1, clientId);
-      await client1.connect();
-      clients.push({ client: client1, free: true });
-    } catch (ex) {
-      console.log(ex);
-    }
+  return await withComfyUIServers([8188, 8189], async (clients) => {
 
     const imagesGenerates = [];
-    registerExitCallback(async () => {
-      clients.forEach(async (client) => {
-        await client.client.interrupt();
-        await freeComfyUIMemory(client.client);
-        await client.client.disconnect();
-      });
-    });
 
     const totalVideos = imagePromptDetails.filter(detail => !fs.existsSync(detail.videoFile)).length;
     let completedVideos = 0;
@@ -409,132 +284,7 @@ async function batchGenerateVideosComfyUI(imagePromptDetails) {
     }
 
     await Promise.all(imagesGenerates);
-    await Promise.all(clients.map((client) =>
-      freeComfyUIMemory(client.client)
-    ));
-    await Promise.all(clients.map((client) => client.client.disconnect()));
   });
-}
-
-
-async function batchRefineVideoPromptsOllama(imagePromptDetails) {
-  console.log("Batch refining video prompts using Ollama");
-
-  const workers = observable([]);
-  const maxWorkers = 2; // Number of parallel workers
-
-  // Initialize workers
-  for (let i = 0; i < maxWorkers; i++) {
-    workers.push({ id: i, free: true });
-  }
-
-  const textGenerates = [];
-
-  for (let imagePromptDetail of imagePromptDetails) {
-    if (imagePromptDetail.refinedVideoPrompt) continue;
-
-    await when(() => workers.some((worker) => worker.free));
-    const availableWorkerIndex = workers.findIndex((worker) => worker.free);
-    console.log(`availableWorker: ${availableWorkerIndex}`);
-
-    runInAction(() => {
-      workers[availableWorkerIndex].free = false;
-    });
-
-    const generateText = async () => {
-      console.log(`Refining video prompt for: ${imagePromptDetail.imageFile}`);
-
-      // Read the image and encode it to base64
-      const imageBuffer = fs.readFileSync(imagePromptDetail.imageFile);
-      const imageBase64 = imageBuffer.toString('base64');
-
-      const promptText = `You are an experienced film concept designer and video generation expert. Based on the given image, conduct a detailed analysis and generate a highly detailed and professional video prompt in JSON format for a 5-second video.
-Please strictly adhere to the following JSON structure and content specifications. Each field should be as specific, vivid, and imaginative as possible to capture real-world filmmaking details.
---------------------------------------------------------------------------------
-**JSON Structure Template:**
-{
-  "shot": {
-    "composition": "string",
-    "camera_motion": "string"
-  },
-  "subject": {
-    "description": "string",
-    "wardrobe": "string" // Use "null" if the subject is an animal or has no specific wardrobe
-  },
-  "scene": {
-    "location": "string",
-    "time_of_day": "string",
-    "environment": "string"
-  },
-  "visual_details": {
-    "action": "string",
-    "props": "string", // Use "null" if there are no props
-    "action_sequence": "array of objects"
-  },
-  "cinematography": {
-    "lighting": "string",
-    "tone": "string"
-  }
-}
---------------------------------------------------------------------------------
-**Content Generation Guidelines (Please keep these principles in mind during generation):**
-
-**1. shot**
-*   **composition**: Describe the shot type in detail (e.g., wide shot, medium shot, close-up, long shot), focal length (e.g., 35mm lens, 85mm lens, 50mm lens, 100mm macro telephoto lens, 26mm equivalent lens), camera equipment (e.g., Sony Venice, ARRI Alexa series, RED series, iPhone 15 Pro Max, DJI Inspire 3 drone), and depth of field (e.g., deep depth of field, shallow depth of field).
-*   **camera_motion**: Precisely describe how the camera moves (e.g., smooth Steadicam arc, slow lateral dolly, static, handheld shake, slow pan, drone orbit, rising crane).
-
-**2. subject**
-*   **description**: Provide an extremely detailed depiction of the subject, including their age (e.g., 25-year-old, 23-year-old, 40-year-old, 92-year-old), gender, ethnicity (e.g., Chinese female, Egyptian female, K-pop artist, European female, East Asian female, African male, Korean female, German female, Italian female, Japanese), body type (e.g., slender and athletic), hair (color, style), and any unique facial features. For non-human subjects (e.g., beluga whale, phoenix, emu, golden eagle, duck, snail), describe their physical characteristics in detail.
-
-**3. scene**
-*   **location**: Specify the exact shooting location.
-*   **time_of_day**: State the specific time of day (e.g., dawn, early morning, morning, midday, afternoon, dusk, night).
-*   **environment**: Provide a detailed environmental description that captures the atmosphere and background details.
-
-**4. visual_details**
-*   **action**: A general summary of the action depicted in the video.
-*   **action_sequence**: To enhance the visual tension of the generated 5s video, analyze the image and expand upon it creatively. Design a key action for each second, using the format "0-1s: subject + action" to briefly and precisely describe the action occurring in that second.
-*   **props**: List all relevant props and elements in the scene (e.g., silver-hilted sword, campfire, candelabra, matcha latte and cheesecake, futuristic motorcycle). If there are no props in the scene, this field should be explicitly set to "null".
-
-**5. cinematography**
-*   **lighting**: Describe the light source, quality, color, and direction in detail (e.g., natural dawn light softened by fog, campfire as the key light, natural sunlight through stained glass windows, soft HDR reflections, warm tungsten light and natural window light).
-*   **tone**: Capture the abstract emotional or stylistic feel of the video (e.g., "fierce, elegant, fluid", "mystical, elegant, enchanting", "hyperrealistic with an ironic, dark comedic twist", "dreamy, serene, emotionally healing", "documentary realism", "epic, majestic, awe-inspiring", "wild, dynamic, uninhibited").
-
---------------------------------------------------------------------------------
-**Additional Considerations for Prompt Generation:**
-*   **Length and formatting**: make sure it is less than 2000 tokens. Make it compact and avoid unnecessary white spaces such as spaces and new lines.
-*   **Granularity of Detail**: The LLM should understand that every field requires as much specific detail as possible, not generalizations. For example, instead of writing "a woman," write "a 25-year-old Chinese female with long black hair tied back with a silk ribbon, a slender build, wearing a flowing, pale blue Hanfu...".
-*   **Consistency and Diversity**: While the JSON structure must be strictly consistent, the content of each video prompt should be creative and diverse, reflecting the unique elements of different video types (e.g., martial arts, dance, drama, nature documentary, sci-fi action, motivational, commercial, fantasy).
-*   **Handling Null Values**: When a field is not applicable (e.g., wardrobe for an animal), the LLM should use "null" rather than an empty string or omitting the field, to maintain the integrity of the JSON structure.
-*   **Contextual Description**: When describing action, lighting, and sound, think about how these elements work together to create a specific **"tone"** and express it using vivid language.
-*   **Language Requirements**: All output should be clear, concise, and use professional filmmaking terminology.
-
-Context: ${imagePromptDetail.prompt}
-
-Please analyze the image and generate the video prompt following the structure above.`;
-
-      const messages = [
-        {
-          role: "user",
-          content: promptText,
-          images: [imageBase64]
-        }
-      ];
-
-      const message = await generateTextOpenAI(messages, "ollama", "gpt-oss:20b");
-      imagePromptDetail.refinedVideoPrompt = message.content;
-      console.log(`Refined video prompt generated for: ${imagePromptDetail.imageFile}`);
-
-      runInAction(() => {
-        workers[availableWorkerIndex].free = true;
-      });
-    };
-
-    textGenerates.push(generateText());
-  }
-
-  await Promise.all(textGenerates);
-  console.log("All video prompts refined");
 }
 
 async function batchGenerateImagesComfyUI(imagePromptDetails) {
@@ -545,37 +295,9 @@ async function batchGenerateImagesComfyUI(imagePromptDetails) {
     console.log('All image files already exist, skipping ComfyUI server startup');
     return;
   }
-
-  return await withComfyUIServers([8188, 8189], async () => {
-    const clients = observable([]);
-    const clientId = Math.floor(Math.random() * 4294967294);
-
-    try {
-      const serverAddress1 = "127.0.0.1:8188";
-      const client1 = new ComfyUIClient(serverAddress1, clientId);
-      await client1.connect();
-      clients.push({ client: client1, free: true });
-    } catch (ex) {
-      console.log(ex);
-    }
-
-    try {
-      const serverAddress2 = "127.0.0.1:8189";
-      const client2 = new ComfyUIClient(serverAddress2, clientId);
-      await client2.connect();
-      clients.push({ client: client2, free: true });
-    } catch (ex) {
-      console.log(ex);
-    }
+  return await withComfyUIServers([8188, 8189], async (clients) => {
 
     const imagesGenerates = [];
-    registerExitCallback(async () => {
-      clients.forEach(async (client) => {
-        await client.client.interrupt();
-        await freeComfyUIMemory(client.client);
-        await client.client.disconnect();
-      });
-    });
 
     const totalImages = imagePromptDetails.filter(detail => !fs.existsSync(detail.imageFile)).length;
     let completedImages = 0;
@@ -668,10 +390,6 @@ async function batchGenerateImagesComfyUI(imagePromptDetails) {
     }
 
     await Promise.all(imagesGenerates);
-    await Promise.all(clients.map((client) =>
-      freeComfyUIMemory(client.client)
-    ));
-    await Promise.all(clients.map((client) => client.client.disconnect()));
   });
 }
 
@@ -693,45 +411,6 @@ async function generateAudio(text, speakerVoiceFile) {
     }
   );
   return response.data.data;
-}
-
-async function generateTranscript(audioFile) {
-  const speechAudioBase64 = fs.readFileSync(audioFile, { encoding: "base64" });
-  const response = await axios.post(
-    `http://localhost:8080/speech2text`,
-    {
-      speech_audio_base64: speechAudioBase64,
-    },
-    {
-      headers: {
-        "Content-Type": "application/json",
-        Accept: "application/json",
-      },
-    }
-  );
-  return response.data.data;
-}
-
-async function generateText(messages) {
-  const response = await axios.post(
-    `http://localhost:8080/instruct`,
-    {
-      messages: messages,
-      max_new_tokens: 1024,
-      do_sample: true,
-      temperature: 0.6,
-      top_p: 0.9,
-      tokenize: false,
-      add_generation_prompt: true,
-    },
-    {
-      headers: {
-        "Content-Type": "application/json",
-        Accept: "application/json",
-      },
-    }
-  );
-  return response.data.data.message;
 }
 
 async function generateTextOllama(messages, model) {
@@ -903,6 +582,12 @@ ${characters && characters.length > 0 ? characters.map(c => `- ${c.name}: ${c.ap
 **If a scene mentions "I" or "my", identify which character from context (usually Narrator).**
 **Include the character's FULL appearance description from above when they appear.**
 **Maintain consistent wardrobe, hair, features across all scenes**
+
+CHARACTER STATE CONTINUITY (CRITICAL):
+**Track and maintain character states across scenes (position, action, props, clothing state).**
+**If a character is in a specific state in one scene (e.g., hiding under a blanket, holding an object, wearing a hat, sitting), continue describing them in that state in subsequent scenes UNLESS the story explicitly indicates a change.**
+**Examples: "kid hiding under blanket" → continue "kid still under blanket" until story says they emerge; "woman holding sword" → keep sword in hand until story mentions putting it down.**
+**Pay attention to: body position, held objects, clothing additions/removals, locations within a scene.**
 
 CINEMATIC TECHNIQUES TO INCLUDE:
 - Shot types: wide establishing, medium, close-up, over-shoulder
@@ -1132,6 +817,12 @@ CHARACTER CONSISTENCY:
 - Maintain consistent wardrobe, hair, features across scenes
 - Use age, ethnicity, build, distinctive features
 
+CHARACTER STATE CONTINUITY (CRITICAL):
+- Track character states from previous scenes (position, action, props, clothing state)
+- If a character was in a specific state in a previous scene (e.g., hiding under blanket, holding object, sitting, wearing specific item), continue that state in subsequent scenes UNLESS the current scene explicitly indicates a change
+- Examples: "kid hiding under blanket" in Scene 1 → Scene 2 should continue "kid still hidden under blanket" until story shows them emerging
+- Pay attention to: body positions, held objects, clothing additions/removals, character locations within scene
+
 CINEMATIC TECHNIQUES:
 - Specify shot types: wide establishing, medium, close-up, over-shoulder
 - Camera angles: eye-level, low-angle, high-angle, Dutch tilt
@@ -1190,11 +881,12 @@ ${sceneDescriptionChunk.map((s, i) => `Scene ${i + 1}: "${s}"`).join('\n')}
 
 FOR EACH SCENE:
 1. Identify WHO is in this scene (narrator/character names or describe the subject)
-2. What ACTION is happening
+2. What ACTION is happening (check if character continues previous state from earlier scenes)
 3. WHERE it takes place
 4. HOW it's lit and framed
 5. WHAT atmosphere/mood
 6. Ensure all characters mentioned are included with FULL appearance details
+7. MAINTAIN CHARACTER STATES: If a character had a specific position/prop/action in previous scenes, continue that state unless current scene indicates a change
 
 Output EXACTLY ${sceneDescriptionChunk.length} prompts as JSON array: ["prompt1", "prompt2", ...]
 Each prompt = one detailed sentence with all required elements.`;
@@ -1761,10 +1453,8 @@ exports.batchGenerateAudios = batchGenerateAudios;
 exports.batchGenerateTranscripts = batchGenerateTranscripts;
 exports.generateContinousStoryScenePrompts = generateContinousStoryScenePrompts;
 exports.generateContinousStorySceneVideoPrompts = generateContinousStorySceneVideoPrompts;
-exports.batchRefineVideoPromptsOllama = batchRefineVideoPromptsOllama;
 exports.extractCharactersWithAppearance = extractCharactersWithAppearance;
 exports.generateStoryContentByCharactor = generateStoryContentByCharactor;
 exports.generateStoryCoverPrompt = generateStoryCoverPrompt;
 exports.splitStoryAndGeneratePromptsWithLLM = splitStoryAndGeneratePromptsWithLLM;
 exports.speedUpAudio = speedUpAudio;
-exports.freeVRams = freeVRams;

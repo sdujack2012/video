@@ -11,7 +11,6 @@ const {
   generateStoryContentByCharactor,
   speedUpAudio,
   generateStoryCoverPrompt,
-  batchRefineVideoPromptsOllama,
   extractCharactersWithAppearance,
   splitStoryAndGeneratePromptsWithLLM
 } = require("./resources_utils");
@@ -82,18 +81,6 @@ async function generateScenes(title) {
 
   await batchGenerateImagesByPrompts(imagesInfos);
   if (story.enableVideo) {
-    if (story.enableVideoPromptRefinement) {
-      console.log("Refining video prompts");
-      await batchRefineVideoPromptsOllama(imagesInfos);
-      const contentChunkimagesInfos = imagesInfos.filter(info => !info.isCover);
-
-      story.contentChunks.forEach((_, index) => {
-        story.contentChunks[index].refinedVideoPrompt = contentChunkimagesInfos[index].refinedVideoPrompt;
-      })
-      fs.writeFileSync(storyJsonPath, JSON.stringify(story, null, 4));
-    } else {
-      console.log("Skipping video prompt refinement (disabled by flag)");
-    }
     await batchGenerateVideosByPrompts(imagesInfos);
   }
   fs.writeFileSync(storyJsonPath, JSON.stringify(story, null, 4));
