@@ -1,12 +1,11 @@
 const fs = require("fs");
 const path = require("path");
-const kill = require("tree-kill");
 const util = require("util");
 const exec = util.promisify(require("child_process").exec);
 const axios = require("axios");
-var Client = require("socket.engine").client;
 var { spawn } = require("child_process");
 const { observable } = require("mobx");
+const { ComfyUIClient } = require("./comfyui_client");
 
 function createFolderIfNotExist(...pathParts) {
   const folderPath = path.resolve(...pathParts);
@@ -42,60 +41,6 @@ async function executeExternalHelper(command, inputJson, additionalParams) {
   } else if (stderr) {
     console.warn("stderr:", stderr);
   }
-}
-
-async function startOllama() {
-  const child = spawn("ollama", ["run", "llama3_custom"]);
-
-  return {
-    terminate: () => kill(child.pid),
-  };
-}
-
-async function createAiSession(hostChannel) {
-  const child = spawn("python", ["ai_session.py"]);
-  child.stdout.setEncoding("utf8");
-  const clientChannel = `${Math.random()}#client`;
-
-  const promise = new Promise((resolve) => {
-    child.stdout.on("data", function (data) {
-      console.log("stdout: " + data);
-      resolve();
-    });
-  });
-  await promise;
-
-  child.stderr.setEncoding("utf8");
-  child.stderr.on("data", function (data) {
-    //Here is where the error output goes
-
-    console.log("stderr: " + data);
-
-    data = data.toString();
-  });
-
-  child.on("close", function (code) {
-    //Here you can get the exit code of the script
-
-    console.log("closing code: " + code);
-  });
-
-  const c = new Client();
-  c.start();
-
-  return {
-    terminate: () => kill(child.pid),
-    getDataFromHost: async () => {
-      const promise = new Promise((resolve) => {
-        c.on(clientChannel, (data) => {
-          resolve(data);
-        });
-      });
-      return await promise;
-    },
-    writeDataToHost: (data, action) =>
-      c.write(hostChannel, { data, clientChannel, action }),
-  };
 }
 
 function registerExitCallback(callback) {
@@ -236,42 +181,6 @@ async function ensureServerRunning(port) {
   return await startComfyUIServer(port);
 }
 
-// Helper function to stop ComfyUI servers
-async function stopComfyUIServers() {
-  console.log('Stopping ComfyUI servers...');
-
-  // Send interrupt and free memory to both servers if they're running
-  const ports = [8188, 8189];
-
-  for (const port of ports) {
-    if (await isServerRunning(port)) {
-      try {
-        // Try to gracefully shut down via API
-        await axios.post(`http://127.0.0.1:${port}/interrupt`, {}, { timeout: 5000 });
-        console.log(`Interrupted tasks on port ${port}`);
-
-        // Give it a moment to clean up
-        await new Promise(resolve => setTimeout(resolve, 1000));
-      } catch (ex) {
-        console.log(`Could not interrupt server on port ${port}: ${ex.message}`);
-      }
-    }
-  }
-
-  // Kill the spawned processes
-  for (const serverInfo of serverProcesses) {
-    try {
-      // On Windows, use taskkill to kill the entire process tree
-      await exec(`taskkill /F /T /PID ${serverInfo.process.pid}`);
-      console.log(`Stopped ComfyUI server on port ${serverInfo.port}`);
-    } catch (ex) {
-      console.log(`Could not stop server on port ${serverInfo.port}: ${ex.message}`);
-    }
-  }
-
-  serverProcesses.length = 0;
-}
-
 // Wrapper function that manages ComfyUI server lifecycle
 async function withComfyUIServers(ports, callback) {
   const startedServers = [];
@@ -321,12 +230,9 @@ async function withComfyUIServers(ports, callback) {
 
 exports.createFolderIfNotExist = createFolderIfNotExist;
 exports.executeExternalHelper = executeExternalHelper;
-exports.createAiSession = createAiSession;
 exports.splitArrayIntoChunks = splitArrayIntoChunks;
-exports.startOllama = startOllama;
 exports.registerExitCallback = registerExitCallback;
 exports.withComfyUIServers = withComfyUIServers;
 exports.isServerRunning = isServerRunning;
 exports.startComfyUIServer = startComfyUIServer;
 exports.ensureServerRunning = ensureServerRunning;
-exports.stopComfyUIServers = stopComfyUIServers;

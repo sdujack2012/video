@@ -72,17 +72,6 @@ async function batchGenerateAudiosComfyUI(audioDetails) {
         clients[availableClient].free = false;
       });
 
-      // const indexTTS2 = JSON.parse(
-      //   fs.readFileSync("./comfyUI workflows/index_tts2.json")
-      // );
-
-      // indexTTS2["27"]["inputs"]["seed"] = Math.floor(
-      //   Math.random() * 4294967294
-      // );
-      // indexTTS2["27"]["inputs"]["text"] = audioDetail.text;
-      // indexTTS2["29"]["inputs"]["audio"] = audioDetail.speakerVoiceFile;
-      // indexTTS2["49"]["inputs"]["filename_prefix"] = "audio";
-
       const indexTTS2 = JSON.parse(
         fs.readFileSync("./comfyUI workflows/index_tts2-v2.json")
       );
@@ -146,97 +135,6 @@ async function batchGenerateVideosComfyUI(imagePromptDetails) {
       runInAction(() => {
         clients[availableClient].free = false;
       });
-
-      // const workflow = JSON.parse(
-      //   fs.readFileSync("./comfyUI workflows/wan2.2-t2v-rapid-aio-gguf.json")
-      // );
-
-      // workflow["3"]["inputs"]["seed"] = Math.floor(Math.random() * 4294967294);
-      // workflow["5"]["inputs"]["text"] =
-      //   imagePromptDetail.style +
-      //   ", " +
-      //   imagePromptDetail.prompt;
-      // workflow["6"]["inputs"]["width"] = imagePromptDetail.width;
-      // workflow["6"]["inputs"]["height"] = imagePromptDetail.height;
-      // workflow["8"]["inputs"]["filename_prefix"] = "video";
-
-
-      // const workflow = JSON.parse(
-      //   fs.readFileSync("./comfyUI workflows/Rapid-AIO-Mega-t2v.json")
-      // );
-
-      // workflow["8"]["inputs"]["seed"] = Math.floor(Math.random() * 4294967294);
-      // workflow["9"]["inputs"]["text"] =
-      //   imagePromptDetail.style +
-      //   ", " +
-      //   imagePromptDetail.prompt;
-      // workflow["44"]["inputs"]["width"] = imagePromptDetail.width;
-      // workflow["44"]["inputs"]["height"] = imagePromptDetail.height;
-      // workflow["39"]["inputs"]["filename_prefix"] = "video";
-
-      // const workflow = JSON.parse(
-      //   fs.readFileSync("./comfyUI workflows/Rapid-AIO-Mega-i2v.json")
-      // );
-
-      // workflow["8"]["inputs"]["seed"] = Math.floor(Math.random() * 4294967294);
-      // workflow["9"]["inputs"]["text"] =
-      //   imagePromptDetail.style +
-      //   ", " +
-      //   imagePromptDetail.prompt;
-      // workflow["28"]["inputs"]["width"] = imagePromptDetail.width / 2;
-      // workflow["28"]["inputs"]["height"] = imagePromptDetail.height / 2;
-      // workflow["16"]["inputs"]["image"] = imagePromptDetail.imageFile;
-      // workflow["39"]["inputs"]["filename_prefix"] = "video";
-
-      // const workflow = JSON.parse(
-      //   fs.readFileSync("./comfyUI workflows/wan2.2_lighting.json")
-      // );
-
-      // workflow["57"]["inputs"]["noise_seed"] = Math.floor(Math.random() * 4294967294);
-      // workflow["58"]["inputs"]["noise_seed"] = Math.floor(Math.random() * 4294967294);
-      // workflow["6"]["inputs"]["text"] =
-      //   imagePromptDetail.style +
-      //   ", " +
-      //   imagePromptDetail.prompt;
-      // workflow["59"]["inputs"]["width"] = imagePromptDetail.width / 2;
-      // workflow["59"]["inputs"]["height"] = imagePromptDetail.height / 2;
-      // workflow["78"]["inputs"]["filename_prefix"] = "video";
-
-
-      // const workflow = JSON.parse(
-      //   fs.readFileSync("./comfyUI workflows/wan2.2_i2v.json")
-      // );
-
-      // workflow["86"]["inputs"]["noise_seed"] = Math.floor(Math.random() * 4294967294);
-      // workflow["93"]["inputs"]["text"] = imagePromptDetail.refinedVideoPrompt;
-      // workflow["98"]["inputs"]["width"] = imagePromptDetail.width / 2;
-      // workflow["98"]["inputs"]["height"] = imagePromptDetail.height / 2;
-      // workflow["97"]["inputs"]["image"] = imagePromptDetail.imageFile;
-      // workflow["108"]["inputs"]["filename_prefix"] = "video";
-
-      // const workflow = JSON.parse(
-      //   fs.readFileSync("./comfyUI workflows/wan2.2_i2v_painter.json")
-      // );
-      // workflow["86"]["inputs"]["noise_seed"] = Math.floor(Math.random() * 4294967294);
-      // workflow["93"]["inputs"]["text"] = JSON.stringify(imagePromptDetail.refinedVideoPrompt || imagePromptDetail.videoPrompt);
-      // workflow["114"]["inputs"]["width"] = imagePromptDetail.width / 2;
-      // workflow["114"]["inputs"]["height"] = imagePromptDetail.height / 2;
-      // workflow["97"]["inputs"]["image"] = imagePromptDetail.imageFile;
-      // workflow["108"]["inputs"]["filename_prefix"] = "video";
-
-      // const workflow = JSON.parse(
-      //   fs.readFileSync("./comfyUI workflows/wan2.2_lighting.json")
-      // );
-
-      // workflow["86"]["inputs"]["noise_seed"] = Math.floor(Math.random() * 4294967294);
-      // workflow["117"]["inputs"]["String"] =
-      //   imagePromptDetail.refinedVideoPrompt;
-      // workflow["98"]["inputs"]["width"] = imagePromptDetail.width / 2;
-      // workflow["98"]["inputs"]["height"] = imagePromptDetail.height / 2;
-      // workflow["97"]["inputs"]["image"] = imagePromptDetail.imageFile;
-      // workflow["108"]["inputs"]["filename_prefix"] = "video";
-
-
       // const workflow = JSON.parse(
       //   fs.readFileSync("./comfyUI workflows/wan2.2_t2v.json")
       // );
@@ -249,8 +147,6 @@ async function batchGenerateVideosComfyUI(imagePromptDetails) {
       // workflow["74"]["inputs"]["width"] = imagePromptDetail.width / 2;
       // workflow["74"]["inputs"]["height"] = imagePromptDetail.height / 2;
       // workflow["80"]["inputs"]["filename_prefix"] = "video";
-
-
       const workflow = JSON.parse(
         fs.readFileSync("./comfyUI workflows/ltx2_i2v.json")
       );
@@ -314,45 +210,6 @@ async function batchGenerateImagesComfyUI(imagePromptDetails) {
         clients[availableClient].free = false;
       });
 
-      // const workflow = JSON.parse(
-      //   fs.readFileSync("./comfyUI workflows/image_qwen_image.json")
-      // );
-
-      // workflow["3"]["inputs"]["seed"] = Math.floor(Math.random() * 4294967294);
-      // workflow["6"]["inputs"]["text"] =
-      //   imagePromptDetail.style +
-      //   ", " +
-      //   imagePromptDetail.prompt;
-      // workflow["58"]["inputs"]["width"] = imagePromptDetail.width;
-      // workflow["58"]["inputs"]["height"] = imagePromptDetail.height;
-      // workflow["60"]["inputs"]["filename_prefix"] = "image";
-
-      // const workflow = JSON.parse(
-      //   fs.readFileSync("./comfyUI workflows/image_qwen_10steps.json")
-      // );
-
-      // workflow["3"]["inputs"]["seed"] = Math.floor(Math.random() * 4294967294);
-      // workflow["6"]["inputs"]["text"] =
-      //   imagePromptDetail.style +
-      //   ", " +
-      //   imagePromptDetail.prompt;
-      // workflow["58"]["inputs"]["width"] = imagePromptDetail.width;
-      // workflow["58"]["inputs"]["height"] = imagePromptDetail.height;
-      // workflow["60"]["inputs"]["filename_prefix"] = "image";
-
-      // const workflow = JSON.parse(
-      //   fs.readFileSync("./comfyUI workflows/image_qwen_10steps.json")
-      // );
-
-      // workflow["3"]["inputs"]["seed"] = Math.floor(Math.random() * 4294967294);
-      // workflow["6"]["inputs"]["text"] =
-      //   imagePromptDetail.style +
-      //   ", " +
-      //   imagePromptDetail.prompt;
-      // workflow["58"]["inputs"]["width"] = imagePromptDetail.width;
-      // workflow["58"]["inputs"]["height"] = imagePromptDetail.height;
-      // workflow["60"]["inputs"]["filename_prefix"] = "image";
-
       const workflow = JSON.parse(
         fs.readFileSync("./comfyUI workflows/z_image_turbo.json")
       );
@@ -393,26 +250,6 @@ async function batchGenerateImagesComfyUI(imagePromptDetails) {
   });
 }
 
-async function generateAudio(text, speakerVoiceFile) {
-  const speakerWavBase64 = fs.readFileSync(speakerVoiceFile, {
-    encoding: "base64",
-  });
-  const response = await axios.post(
-    `http://localhost:8080/text2speech`,
-    {
-      text,
-      speaker_wav_base64: speakerWavBase64,
-    },
-    {
-      headers: {
-        "Content-Type": "application/json",
-        Accept: "application/json",
-      },
-    }
-  );
-  return response.data.data;
-}
-
 async function generateTextOllama(messages, model) {
   const response = await axios.post(
     `http://localhost:11434/api/chat`,
@@ -434,13 +271,11 @@ async function generateTextOllama(messages, model) {
 
 async function batchGenerateImagesByPrompts(imagePromptDetails) {
   console.log("Batch generating images");
-  //await executeExternalHelper("python generate_image.py", imagePromptDetails);
   await batchGenerateImagesComfyUI(imagePromptDetails);
 }
 
 async function batchGenerateVideosByPrompts(imagePromptDetails) {
   console.log("Batch generating videos");
-  //await executeExternalHelper("python generate_image.py", imagePromptDetails);
   await batchGenerateVideosComfyUI(imagePromptDetails);
 }
 
