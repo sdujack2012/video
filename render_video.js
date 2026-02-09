@@ -11,6 +11,7 @@ const exec = util.promisify(require("child_process").exec);
 const { getAudioDurationInSeconds } = require("get-audio-duration");
 const { getVideoDurationInSeconds } = require('get-video-duration');
 const { batchGenerateTranscripts } = require("./resources_utils");
+const cliProgress = require("cli-progress");
 const {
   sizeMapping,
   genreBGM,
@@ -27,6 +28,30 @@ const {
   screenSizeMapping,
   genreTransitionSettings,
 } = require("./config");
+
+// Helper function to create and manage progress bar with elapsed time
+function createProgressBar(total, taskName) {
+  const startTime = Date.now();
+  const bar = new cliProgress.SingleBar({
+    format: `${taskName} [{bar}] {percentage}% | {value}/{total} | Elapsed: {elapsed}s | ETA: {eta}s`,
+    barCompleteChar: '\u2588',
+    barIncompleteChar: '\u2591',
+    hideCursor: true
+  });
+  bar.start(total, 0, { elapsed: 0 });
+
+  return {
+    increment() {
+      const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+      bar.increment(1, { elapsed });
+    },
+    stop() {
+      const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+      bar.update(total, { elapsed });
+      bar.stop();
+    }
+  };
+}
 
 async function renderVideo(topic) {
   const current = Date.now();
@@ -72,15 +97,13 @@ async function renderVideo(topic) {
     { limit: 3, current: 0 },
   ]);
   const rendingClipPromises = [];
+  const clipProgressBar = createProgressBar(videoConfigClips.length, 'Rendering Video Clips');
   for (let index = 0; index < videoConfigClips.length; index++) {
     await when(() => gpus.some((gpu) => gpu.limit > gpu.current));
     const availableGpu = gpus.findIndex((gpu) => gpu.limit > gpu.current);
     const mergedVideoPath = path.resolve(
       storyTempFolder,
       `temp_merged_video_${index + 1}.mkv`
-    );
-    console.log(
-      `Rendering clip ${index + 1}/${videoConfigClips.length} using gpu ${availableGpu}`
     );
     const videoConfigClip = videoConfigClips[index];
     runInAction(() => {
@@ -103,14 +126,16 @@ async function renderVideo(topic) {
     };
 
     rendingClipPromises.push(
-      createCurrentRenderingPromise().then(() =>
+      createCurrentRenderingPromise().then(() => {
+        clipProgressBar.increment();
         runInAction(() => {
           gpus[availableGpu].current--;
-        })
-      )
+        });
+      })
     );
   }
   await Promise.all(rendingClipPromises);
+  clipProgressBar.stop();
 
   // Generate videos based on videoConfigClips by chunks to avoid ffmpng commands being too long
   const audioVideoPaths = [];
@@ -121,18 +146,15 @@ async function renderVideo(topic) {
     videoConfigClips,
     chunkSplitLimit
   );
-  console.log(`Creating video chunk`);
   gpus = observable([
     { limit: 2, current: 0 },
     { limit: 2, current: 0 },
   ]);
   const rendingClipChunkPromises = [];
+  const chunkProgressBar = createProgressBar(videoConfigClipChunks.length, 'Creating Video Chunks');
   for (let index = 0; index < videoConfigClipChunks.length; index++) {
     await when(() => gpus.some((gpu) => gpu.limit > gpu.current));
     const availableGpu = gpus.findIndex((gpu) => gpu.limit > gpu.current);
-    console.log(
-      `Creating video chunk ${index + 1}/${videoConfigClipChunks.length} using gpu ${availableGpu}`
-    );
 
     const audioVideoPath = path.resolve(
       storyTempFolder,
@@ -159,14 +181,16 @@ async function renderVideo(topic) {
     });
 
     rendingClipChunkPromises.push(
-      createCurrentRenderingPromise().then(() =>
+      createCurrentRenderingPromise().then(() => {
+        chunkProgressBar.increment();
         runInAction(() => {
           gpus[availableGpu].current--;
-        })
-      )
+        });
+      })
     );
   }
   await Promise.all(rendingClipChunkPromises);
+  chunkProgressBar.stop();
 
   // Batch generate transcripts for all chunks at once
   console.log("Generating transcriptions for all chunks");
@@ -175,8 +199,8 @@ async function renderVideo(topic) {
   // Create ASS files and apply subtitles to each chunk
   console.log("Creating ASS subtitle files and applying to video chunks");
   const subtitledVideoPaths = [];
+  const subtitleProgressBar = createProgressBar(transcripts.length, 'Processing Subtitles');
   for (let index = 0; index < transcripts.length; index++) {
-    console.log(`Processing subtitles for chunk ${index + 1}/${transcripts.length}`);
 
     // Extract words from transcript
     let words = transcripts[index].flatMap((segment) => segment.words);
@@ -211,7 +235,9 @@ async function renderVideo(topic) {
 
     subtitledVideoPaths[index] = subtitledVideoPath;
     fs.unlinkSync(tempAssLinkPath); // Clean up temp ASS file
+    subtitleProgressBar.increment();
   }
+  subtitleProgressBar.stop();
 
   // merge video_audio chunks with subtitles
   console.log(`Merging video chunks with subtitles`);

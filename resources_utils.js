@@ -12,6 +12,31 @@ const {
 const util = require("util");
 const exec = util.promisify(require("child_process").exec);
 const { when, runInAction } = require("mobx");
+const cliProgress = require("cli-progress");
+
+// Helper function to create and manage progress bar with elapsed time
+function createProgressBar(total, taskName) {
+  const startTime = Date.now();
+  const bar = new cliProgress.SingleBar({
+    format: `${taskName} [{bar}] {percentage}% | {value}/{total} | Elapsed: {elapsed}s | ETA: {eta}s`,
+    barCompleteChar: '\u2588',
+    barIncompleteChar: '\u2591',
+    hideCursor: true
+  });
+  bar.start(total, 0, { elapsed: 0 });
+
+  return {
+    increment() {
+      const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+      bar.increment(1, { elapsed });
+    },
+    stop() {
+      const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+      bar.update(total, { elapsed });
+      bar.stop();
+    }
+  };
+}
 
 async function generateTextOpenAI(messages, provider, model) {
   if (provider === "ollama") {
@@ -58,7 +83,7 @@ async function batchGenerateAudiosComfyUI(audioDetails) {
     const audioGenerates = [];
 
     const totalAudios = audioDetails.filter(detail => !fs.existsSync(detail.outputFile)).length;
-    let completedAudios = 0;
+    const progressBar = createProgressBar(totalAudios, 'Audio Generation');
 
     for (let audioDetail of audioDetails) {
       if (fs.existsSync(audioDetail.outputFile)) continue;
@@ -95,8 +120,7 @@ async function batchGenerateAudiosComfyUI(audioDetails) {
 
         fs.writeFileSync(audioDetail.outputFile, buffer);
 
-        completedAudios++;
-        console.log(`Audio generation progress: ${completedAudios}/${totalAudios}`);
+        progressBar.increment();
 
         runInAction(() => {
           clients[availableClient].free = true;
@@ -106,6 +130,7 @@ async function batchGenerateAudiosComfyUI(audioDetails) {
     }
 
     await Promise.all(audioGenerates);
+    progressBar.stop();
   });
 }
 
@@ -117,12 +142,12 @@ async function batchGenerateVideosComfyUI(imagePromptDetails) {
     console.log('All video files already exist, skipping ComfyUI server startup');
     return;
   }
-  return await withComfyUIServers([8188, 8189], async (clients) => {
+  return await withComfyUIServers([8188], async (clients) => {
 
     const imagesGenerates = [];
 
     const totalVideos = imagePromptDetails.filter(detail => !fs.existsSync(detail.videoFile)).length;
-    let completedVideos = 0;
+    const progressBar = createProgressBar(totalVideos, 'Video Generation');
 
     for (let imagePromptDetail of imagePromptDetails) {
       if (fs.existsSync(imagePromptDetail.videoFile)) continue;
@@ -147,16 +172,27 @@ async function batchGenerateVideosComfyUI(imagePromptDetails) {
       // workflow["74"]["inputs"]["width"] = imagePromptDetail.width / 2;
       // workflow["74"]["inputs"]["height"] = imagePromptDetail.height / 2;
       // workflow["80"]["inputs"]["filename_prefix"] = "video";
+      // const workflow = JSON.parse(
+      //   fs.readFileSync("./comfyUI workflows/ltx2_i2v.json")
+      // );
+
+      // workflow["118"]["inputs"]["noise_seed"] = Math.floor(Math.random() * 4294967294);
+      // workflow["120"]["inputs"]["text"] = JSON.stringify(imagePromptDetail.refinedVideoPrompt || imagePromptDetail.videoPrompt);
+      // workflow["102"]["inputs"]["resize_type.width"] = imagePromptDetail.width / 2;
+      // workflow["102"]["inputs"]["resize_type.height"] = imagePromptDetail.height / 2;
+      // workflow["98"]["inputs"]["image"] = imagePromptDetail.imageFile;
+      // workflow["146"]["inputs"]["filename_prefix"] = "video";
+
       const workflow = JSON.parse(
-        fs.readFileSync("./comfyUI workflows/ltx2_i2v.json")
+        fs.readFileSync("./comfyUI workflows/wan2.2_i2v_smoothmix.json")
       );
 
-      workflow["118"]["inputs"]["noise_seed"] = Math.floor(Math.random() * 4294967294);
-      workflow["120"]["inputs"]["text"] = JSON.stringify(imagePromptDetail.refinedVideoPrompt || imagePromptDetail.videoPrompt);
-      workflow["102"]["inputs"]["resize_type.width"] = imagePromptDetail.width;
-      workflow["102"]["inputs"]["resize_type.height"] = imagePromptDetail.height;
-      workflow["98"]["inputs"]["image"] = imagePromptDetail.imageFile;
-      workflow["146"]["inputs"]["filename_prefix"] = "video";
+      workflow["57"]["inputs"]["noise_seed"] = Math.floor(Math.random() * 4294967294);
+      workflow["88"]["inputs"]["value"] = JSON.stringify(imagePromptDetail.refinedVideoPrompt || imagePromptDetail.videoPrompt);
+      workflow["64"]["inputs"]["width"] = imagePromptDetail.width / 2;
+      workflow["64"]["inputs"]["height"] = imagePromptDetail.height / 2;
+      workflow["52"]["inputs"]["image"] = imagePromptDetail.imageFile;
+      workflow["63"]["inputs"]["filename_prefix"] = "video";
 
       const generateImage = async () => {
         const outputfiles = await clients[availableClient].client.getOutputFiles(
@@ -169,8 +205,7 @@ async function batchGenerateVideosComfyUI(imagePromptDetails) {
 
         fs.writeFileSync(imagePromptDetail.videoFile, buffer);
 
-        completedVideos++;
-        console.log(`Video generation progress: ${completedVideos}/${totalVideos}`);
+        progressBar.increment();
 
         runInAction(() => {
           clients[availableClient].free = true;
@@ -180,6 +215,7 @@ async function batchGenerateVideosComfyUI(imagePromptDetails) {
     }
 
     await Promise.all(imagesGenerates);
+    progressBar.stop();
   });
 }
 
@@ -196,7 +232,7 @@ async function batchGenerateImagesComfyUI(imagePromptDetails) {
     const imagesGenerates = [];
 
     const totalImages = imagePromptDetails.filter(detail => !fs.existsSync(detail.imageFile)).length;
-    let completedImages = 0;
+    const progressBar = createProgressBar(totalImages, 'Image Generation');
 
     for (let imagePromptDetail of imagePromptDetails) {
       if (fs.existsSync(imagePromptDetail.imageFile)) continue;
@@ -224,8 +260,6 @@ async function batchGenerateImagesComfyUI(imagePromptDetails) {
       workflow["9"]["inputs"]["filename_prefix"] = "image";
 
       const generateImage = async () => {
-        console.log("imagePromptDetail", imagePromptDetail);
-
         const outputfiles = await clients[availableClient].client.getOutputFiles(
           workflow,
           "image",
@@ -236,8 +270,7 @@ async function batchGenerateImagesComfyUI(imagePromptDetails) {
 
         fs.writeFileSync(imagePromptDetail.imageFile, buffer);
 
-        completedImages++;
-        console.log(`Image generation progress: ${completedImages}/${totalImages}`);
+        progressBar.increment();
 
         runInAction(() => {
           clients[availableClient].free = true;
@@ -247,6 +280,7 @@ async function batchGenerateImagesComfyUI(imagePromptDetails) {
     }
 
     await Promise.all(imagesGenerates);
+    progressBar.stop();
   });
 }
 
@@ -349,7 +383,7 @@ Please write a image prompt to create a cover image for the following story cont
   const messages = [systemMessage, prompt];
 
   messages.push(prompt);
-  const message = await generateTextOpenAI(messages, "ollama", "gpt-oss:20b");
+  const message = await generateTextOpenAI(messages, "ollama", "qwen3:30b");
   return message.content;
 }
 
@@ -483,7 +517,7 @@ Output ONLY valid JSON following the structure specified.`
       const message = await generateTextOpenAI(
         [systemPrompt, userPrompt],
         "ollama",
-        "gemma3:27b"
+        "qwen3:30b"
       );
 
       const jsonMatch = message.content.match(/\{[\s\S]*\}/);
@@ -744,7 +778,7 @@ Each prompt = one detailed sentence with all required elements.`;
       try {
         console.log(`Attempt #${currentRetry + 1}`);
         const regex = /\[[\s\S]{10,}\]/gm;
-        message = await generateTextOpenAI(messages, "ollama", "gpt-oss:20b");
+        message = await generateTextOpenAI(messages, "ollama", "qwen3:30b");
         const matches = message.content.match(regex);
         if (matches && matches.length > 0) {
           const parsed = JSON.parse(matches[0]);
@@ -1003,7 +1037,7 @@ Each prompt should be one detailed flowing paragraph (NOT JSON objects).
       try {
         console.log(`Attempt #${currentRetry + 1} `);
         const regex = /\[[\s\S]{10,}\]/gm;
-        message = await generateTextOpenAI(messages, "ollama", "gpt-oss:20b");
+        message = await generateTextOpenAI(messages, "ollama", "qwen3:30b");
         const matches = message.content.match(regex);
         if (matches && matches.length > 0) {
           const parsed = JSON.parse(matches[0]);
@@ -1127,8 +1161,7 @@ Output: Only provide the raw JSON string without any additional messages or form
         const regex = /\[[\s\S]{10,}\]/gm;
         const message = await generateTextOpenAI(
           messages,
-          "ollama", "gpt-oss:20b");
-        console.log("message", message);
+          "ollama", "qwen3:30b");
         const matches = message.content.match(regex);
         if (matches && matches.length > 0) {
           const parsed = JSON.parse(matches[0]);
@@ -1238,7 +1271,7 @@ Output ONLY the JSON array, no other text.
     try {
       console.log(`Attempt #${currentRetry + 1}`);
       const messages = [systemMessage, prompt];
-      const message = await generateTextOpenAI(messages, "ollama", "gpt-oss:20b");
+      const message = await generateTextOpenAI(messages, "ollama", "qwen3:30b");
 
       let jsonContent = message.content.trim();
 
@@ -1292,4 +1325,5 @@ exports.extractCharactersWithAppearance = extractCharactersWithAppearance;
 exports.generateStoryContentByCharactor = generateStoryContentByCharactor;
 exports.generateStoryCoverPrompt = generateStoryCoverPrompt;
 exports.splitStoryAndGeneratePromptsWithLLM = splitStoryAndGeneratePromptsWithLLM;
+exports.generateTextOpenAI = generateTextOpenAI;
 exports.speedUpAudio = speedUpAudio;

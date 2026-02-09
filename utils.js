@@ -218,7 +218,7 @@ async function withComfyUIServers(ports, callback) {
       }
     }
     // Execute the callback with servers running
-    return await callback();
+    return await callback(clients);
 
   } finally {
     // Always stop servers when done, even if callback throws

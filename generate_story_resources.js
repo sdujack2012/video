@@ -235,7 +235,6 @@ function assignVoicesForCharacters(characters) {
 
 async function generateStoryAudios(title) {
   const storyFolder = createFolderIfNotExist(__dirname, "videos", title);
-  console.log("storyFolder", storyFolder);
   const storyJsonPath = path.resolve(storyFolder, "story.json");
   const storyAudioFolder = createFolderIfNotExist(storyFolder, "aduios");
   const story = JSON.parse(fs.readFileSync(storyJsonPath, "utf8"));

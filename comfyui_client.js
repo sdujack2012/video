@@ -265,7 +265,6 @@ const ComfyUIClient = class {
             );
             outputTexts.push(...texts);
           }
-          console.log("outputTexts", outputTexts);
           resolve(outputTexts);
           this.ws?.off("message", onMessage);
         } catch (err) {
