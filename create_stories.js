@@ -15,11 +15,11 @@ const { renderVideo } = require("./render_video");
 async function createShortStories(storyTitle) {
   const storiesPath = path.resolve("stories.json");
   let stories = JSON.parse(fs.readFileSync(storiesPath, "utf8"));
-  stories = storyTitle ? [{ title: storyTitle }] : stories;
+  stories = storyTitle ? stories.filter(story => story.title === storyTitle) : stories;
   const storiesToCreate = [];
   for (let story of stories) {
     const storyFolder = createFolderIfNotExist(
-      "G:/story video/videos",
+      "F:/story video/videos",
       story.title
     );
     const storyJsonPath = path.resolve(storyFolder, "story.json");

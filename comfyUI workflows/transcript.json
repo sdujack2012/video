@@ -1,0 +1,118 @@
+{
+  "1": {
+    "inputs": {
+      "model_size": "1.7B",
+      "device": "auto",
+      "voice_preset": "None (Zero-shot / Custom)",
+      "language": "Auto",
+      "instruct": "",
+      "top_k": 50,
+      "top_p": 1,
+      "temperature": 0.9,
+      "repetition_penalty": 1.05,
+      "max_new_tokens": 2048,
+      "dtype": "auto",
+      "attn_implementation": "auto",
+      "x_vector_only_mode": false,
+      "use_torch_compile": true,
+      "use_cuda_graphs": false,
+      "compile_mode": "default",
+      "asr_use_forced_aligner": true
+    },
+    "class_type": "Qwen3TTSEngineNode",
+    "_meta": {
+      "title": "⚙️ Qwen3-TTS Engine"
+    }
+  },
+  "3": {
+    "inputs": {
+      "srt_preset": "Mobile",
+      "srt_mode": "smart",
+      "srt_max_chars_per_line": 32,
+      "srt_max_lines": 2,
+      "srt_max_duration": 5,
+      "srt_min_duration": 1,
+      "srt_min_gap": 0.6,
+      "srt_max_cps": 17,
+      "dedupe_overlaps": true,
+      "dedupe_window_ms": 1500,
+      "dedupe_min_words": 2,
+      "dedupe_overlap_ratio": 0.6,
+      "punctuation_grace_chars": 12,
+      "min_words_per_segment": 2,
+      "min_segment_seconds": 0.4,
+      "merge_trailing_punct_word": true,
+      "merge_trailing_punct_max_gap": 1,
+      "merge_leading_short_phrase": true,
+      "merge_leading_short_max_words": 2,
+      "merge_leading_short_max_gap": 2,
+      "merge_dangling_tail": true,
+      "merge_dangling_tail_max_words": 3,
+      "merge_dangling_tail_max_gap": 3,
+      "merge_dangling_tail_allowlist": "a,an,the,to,of,and,or,im,i'm,you,you're,we,they,he,she,it",
+      "merge_leading_short_no_punct": true,
+      "merge_leading_short_no_punct_max_words": 2,
+      "merge_leading_short_no_punct_max_gap": 1.5,
+      "merge_incomplete_sentence": true,
+      "merge_incomplete_max_gap": 1.2,
+      "merge_incomplete_keywords": "what,why,how,where,who,which,when",
+      "merge_incomplete_split_next": true,
+      "merge_allow_overlong": true
+    },
+    "class_type": "ASRSRTAdvancedOptionsNode",
+    "_meta": {
+      "title": "🔧 ASR SRT Advanced Options"
+    }
+  },
+  "4": {
+    "inputs": {
+      "language": "Auto",
+      "task": "transcribe",
+      "timestamps": "none",
+      "chunk_size": 30,
+      "overlap": 2,
+      "enable_asr_cache": true,
+      "engine": [
+        "1",
+        0
+      ],
+      "audio": [
+        "9",
+        0
+      ],
+      "srt_options": [
+        "3",
+        0
+      ]
+    },
+    "class_type": "UnifiedASRTranscribeNode",
+    "_meta": {
+      "title": "✏️ ASR Transcribe"
+    }
+  },
+  "7": {
+    "inputs": {
+      "preview": "",
+      "previewMode": null,
+      "source": [
+        "4",
+        0
+      ]
+    },
+    "class_type": "PreviewAny",
+    "_meta": {
+      "title": "Preview as Text"
+    }
+  },
+  "9": {
+    "inputs": {
+      "audio_file": "",
+      "seek_seconds": 0,
+      "duration": 0
+    },
+    "class_type": "VHS_LoadAudio",
+    "_meta": {
+      "title": "Load Audio (Path)🎥🅥🅗🅢"
+    }
+  }
+}

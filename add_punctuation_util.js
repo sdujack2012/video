@@ -1,4 +1,4 @@
-import generateTextOpenAI from "./resources_utils.js";
+import { generateTextOpenAI } from "./resources_utils.js";
 import fs from "fs";
 
 
@@ -30,8 +30,8 @@ async function punctuateChunk(chunk) {
       content: chunk,
     },
   ],
-    "ollama",
-    "qwen3:30b",
+    "llamacpp",
+    "qwen-3.6-35B-general",
   );
 
   return message.content;
@@ -75,15 +75,10 @@ export async function punctuateLongText(text) {
 
     // Merge with previous content using cleanBoundary
     result = cleanBoundary(result, punctuated);
-
-    // Force garbage collection hint
-    if (global.gc) {
-      global.gc();
-    }
   }
 
   // Write final merged result
-  fs.writeFileSync("./output/final_output.txt", result.trim());
+  fs.writeFileSync("./output/final_output.txt", result.trim().replace(/\s+/g, " "));
   console.log("✓ Complete! Final output written to ./output/final_output.txt");
 
   return result;

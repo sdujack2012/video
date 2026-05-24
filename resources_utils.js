@@ -7,8 +7,10 @@ const {
   executeExternalHelper,
   splitArrayIntoChunks,
   createFolderIfNotExist,
-  withComfyUIServers,
+  withExternalComfyuiServers,
+  registerExitCallback,
 } = require("./utils");
+
 const util = require("util");
 const exec = util.promisify(require("child_process").exec);
 const { when, runInAction } = require("mobx");
@@ -18,7 +20,7 @@ const cliProgress = require("cli-progress");
 function createProgressBar(total, taskName) {
   const startTime = Date.now();
   const bar = new cliProgress.SingleBar({
-    format: `${taskName} [{bar}] {percentage}% | {value}/{total} | Elapsed: {elapsed}s | ETA: {eta}s`,
+    format: `${taskName} [{bar}] {percentage}% | {value}/{total} | Elapsed: {elapsed}s | ETA: {eta}s \n`,
     barCompleteChar: '\u2588',
     barIncompleteChar: '\u2591',
     hideCursor: true
@@ -38,7 +40,7 @@ function createProgressBar(total, taskName) {
   };
 }
 
-async function generateTextOpenAI(messages, provider, model) {
+async function generateTextOpenAI(messages, provider, model, unloadModel = true) {
   if (provider === "ollama") {
     return await generateTextOllama(messages, model);
   } else {
@@ -47,8 +49,8 @@ async function generateTextOpenAI(messages, provider, model) {
       openAI: undefined,
       groq: "https://api.groq.com/openai/v1",
       hf: "https://rhlobdgx0viuipyy.us-east-1.aws.endpoints.huggingface.cloud/v1/",
-      ollama: "http://localhost:11434/v1/",
       lm: "http://localhost:1234/v1/",
+      llamacpp: "http://192.168.1.28:8000/v1/",
     };
     const apiKey = apiKeys[provider];
     const baseURL = baseURLs[provider];
@@ -62,11 +64,32 @@ async function generateTextOpenAI(messages, provider, model) {
       baseURL,
     });
 
-    const res = await openai.chat.completions.create({
-      messages,
-      model,
-    });
-    return res.choices[0].message;
+    // Register exit callback to unload model on unexpected termination
+
+    const unloadModelOnExit = async () => {
+      if (unloadModel && provider === "llamacpp") {
+        const serverUrl = baseURL.replace(/\/v1\/?$/, '');
+
+        try {
+          await axios.post(`${serverUrl}/models/unload`, { model_id: model });
+          console.log(`Unloaded model: ${model}`);
+        } catch (ex) {
+          // Silently ignore errors during forced cleanup
+        }
+      }
+    };
+    registerExitCallback(unloadModelOnExit);
+
+    try {
+      const res = await openai.chat.completions.create({
+        messages,
+        model,
+      });
+      return res.choices[0].message;
+
+    } finally {
+      await unloadModelOnExit();
+    }
   }
 }
 
@@ -78,9 +101,8 @@ async function batchGenerateAudiosComfyUI(audioDetails) {
     console.log('All audio files already exist, skipping ComfyUI server startup');
     return;
   }
-  return await withComfyUIServers([8188, 8189], async (clients) => {
-
-    const audioGenerates = [];
+  const audioGenerates = [];
+  return await withExternalComfyuiServers(async (clients) => {
 
     const totalAudios = audioDetails.filter(detail => !fs.existsSync(detail.outputFile)).length;
     const progressBar = createProgressBar(totalAudios, 'Audio Generation');
@@ -97,19 +119,36 @@ async function batchGenerateAudiosComfyUI(audioDetails) {
         clients[availableClient].free = false;
       });
 
+      // const indexTTS2 = JSON.parse(
+      //   fs.readFileSync("./comfyUI workflows/index_tts2-v2.json")
+      // );
+
+      // indexTTS2["47"]["inputs"]["seed"] = Math.floor(
+      //   Math.random() * 4294967294
+      // );
+      // indexTTS2["65"]["inputs"]["value"] = audioDetail.text;
+      // indexTTS2["135"]["inputs"]["audio"] = audioDetail.speakerVoiceFile;
+      // indexTTS2["134"]["inputs"]["filename_prefix"] = "audio";
+
       const indexTTS2 = JSON.parse(
-        fs.readFileSync("./comfyUI workflows/index_tts2-v2.json")
+        fs.readFileSync("./comfyUI workflows/index_tts2-v3.json")
       );
 
       indexTTS2["47"]["inputs"]["seed"] = Math.floor(
         Math.random() * 4294967294
       );
       indexTTS2["65"]["inputs"]["value"] = audioDetail.text;
-      indexTTS2["135"]["inputs"]["audio"] = audioDetail.speakerVoiceFile;
-      indexTTS2["134"]["inputs"]["filename_prefix"] = "audio";
-
+      indexTTS2["135"]["inputs"]["filename_prefix"] = "audio";
 
       const generateAudio = async () => {
+        // Upload the speaker voice file to the remote ComfyUI server
+        const voiceFileBuffer = fs.readFileSync(audioDetail.speakerVoiceFile);
+        const voiceFileName = path.basename(audioDetail.speakerVoiceFile);
+        await clients[availableClient].client.uploadImage(voiceFileBuffer, voiceFileName);
+
+        // Reference the uploaded file by basename (ComfyUI stores it in its input/ directory)
+        indexTTS2["134"]["inputs"]["audio"] = voiceFileName;
+
         const outputfiles = await clients[availableClient].client.getOutputFiles(
           indexTTS2,
           "audio",
@@ -142,7 +181,7 @@ async function batchGenerateVideosComfyUI(imagePromptDetails) {
     console.log('All video files already exist, skipping ComfyUI server startup');
     return;
   }
-  return await withComfyUIServers([8188], async (clients) => {
+  return await withExternalComfyuiServers(async (clients) => {
 
     const imagesGenerates = [];
 
@@ -183,18 +222,37 @@ async function batchGenerateVideosComfyUI(imagePromptDetails) {
       // workflow["98"]["inputs"]["image"] = imagePromptDetail.imageFile;
       // workflow["146"]["inputs"]["filename_prefix"] = "video";
 
+      // const workflow = JSON.parse(
+      //   fs.readFileSync("./comfyUI workflows/wan2.2_i2v_smoothmix.json")
+      // );
+
+      // workflow["57"]["inputs"]["noise_seed"] = Math.floor(Math.random() * 4294967294);
+      // workflow["88"]["inputs"]["value"] = JSON.stringify(imagePromptDetail.refinedVideoPrompt || imagePromptDetail.videoPrompt);
+      // workflow["64"]["inputs"]["width"] = imagePromptDetail.width / 2;
+      // workflow["64"]["inputs"]["height"] = imagePromptDetail.height / 2;
+      // workflow["52"]["inputs"]["image"] = imagePromptDetail.imageFile;
+      // workflow["63"]["inputs"]["filename_prefix"] = "video";
+
       const workflow = JSON.parse(
-        fs.readFileSync("./comfyUI workflows/wan2.2_i2v_smoothmix.json")
+        fs.readFileSync("./comfyUI workflows/ltx2.3_i2v.json")
       );
 
-      workflow["57"]["inputs"]["noise_seed"] = Math.floor(Math.random() * 4294967294);
-      workflow["88"]["inputs"]["value"] = JSON.stringify(imagePromptDetail.refinedVideoPrompt || imagePromptDetail.videoPrompt);
-      workflow["64"]["inputs"]["width"] = imagePromptDetail.width / 2;
-      workflow["64"]["inputs"]["height"] = imagePromptDetail.height / 2;
-      workflow["52"]["inputs"]["image"] = imagePromptDetail.imageFile;
-      workflow["63"]["inputs"]["filename_prefix"] = "video";
+      workflow["274"]["inputs"]["noise_seed"] = Math.floor(Math.random() * 4294967294);
+      workflow["275"]["inputs"]["noise_seed"] = Math.floor(Math.random() * 4294967294);
+      workflow["303"]["inputs"]["value"] = JSON.stringify(imagePromptDetail.refinedVideoPrompt || imagePromptDetail.videoPrompt);
+      workflow["314"]["inputs"]["value"] = imagePromptDetail.width;
+      workflow["299"]["inputs"]["value"] = imagePromptDetail.height;
+      workflow["323"]["inputs"]["filename_prefix"] = "video";
 
       const generateImage = async () => {
+        // Upload the input image to the remote ComfyUI server
+        const imageBuffer = fs.readFileSync(imagePromptDetail.imageFile);
+        const imageFileName = path.basename(imagePromptDetail.imageFile) + Date.now() + path.extname(imagePromptDetail.imageFile);
+        await clients[availableClient].client.uploadImage(imageBuffer, imageFileName);
+
+        // Reference the uploaded file by basename (ComfyUI stores it in its input/ directory)
+        workflow["269"]["inputs"]["image"] = imageFileName;
+
         const outputfiles = await clients[availableClient].client.getOutputFiles(
           workflow,
           "video",
@@ -227,7 +285,7 @@ async function batchGenerateImagesComfyUI(imagePromptDetails) {
     console.log('All image files already exist, skipping ComfyUI server startup');
     return;
   }
-  return await withComfyUIServers([8188, 8189], async (clients) => {
+  return await withExternalComfyuiServers(async (clients) => {
 
     const imagesGenerates = [];
 
@@ -285,6 +343,7 @@ async function batchGenerateImagesComfyUI(imagePromptDetails) {
 }
 
 async function generateTextOllama(messages, model) {
+  console.log("Generating text with Ollama");
   const response = await axios.post(
     `http://localhost:11434/api/chat`,
     {
@@ -383,7 +442,7 @@ Please write a image prompt to create a cover image for the following story cont
   const messages = [systemMessage, prompt];
 
   messages.push(prompt);
-  const message = await generateTextOpenAI(messages, "ollama", "qwen3:30b");
+  const message = await generateTextOpenAI(messages, "llamacpp", "qwen-3.6-35B-general");
   return message.content;
 }
 
@@ -516,8 +575,8 @@ Output ONLY valid JSON following the structure specified.`
 
       const message = await generateTextOpenAI(
         [systemPrompt, userPrompt],
-        "ollama",
-        "qwen3:30b"
+        "llamacpp",
+        "qwen-3.6-35B-general"
       );
 
       const jsonMatch = message.content.match(/\{[\s\S]*\}/);
@@ -778,7 +837,7 @@ Each prompt = one detailed sentence with all required elements.`;
       try {
         console.log(`Attempt #${currentRetry + 1}`);
         const regex = /\[[\s\S]{10,}\]/gm;
-        message = await generateTextOpenAI(messages, "ollama", "qwen3:30b");
+        message = await generateTextOpenAI(messages, "llamacpp", "qwen-3.6-35B-general");
         const matches = message.content.match(regex);
         if (matches && matches.length > 0) {
           const parsed = JSON.parse(matches[0]);
@@ -1037,7 +1096,7 @@ Each prompt should be one detailed flowing paragraph (NOT JSON objects).
       try {
         console.log(`Attempt #${currentRetry + 1} `);
         const regex = /\[[\s\S]{10,}\]/gm;
-        message = await generateTextOpenAI(messages, "ollama", "qwen3:30b");
+        message = await generateTextOpenAI(messages, "llamacpp", "qwen-3.6-35B-general");
         const matches = message.content.match(regex);
         if (matches && matches.length > 0) {
           const parsed = JSON.parse(matches[0]);
@@ -1161,7 +1220,7 @@ Output: Only provide the raw JSON string without any additional messages or form
         const regex = /\[[\s\S]{10,}\]/gm;
         const message = await generateTextOpenAI(
           messages,
-          "ollama", "qwen3:30b");
+          "llamacpp", "qwen-3.6-35B-general");
         const matches = message.content.match(regex);
         if (matches && matches.length > 0) {
           const parsed = JSON.parse(matches[0]);
@@ -1271,7 +1330,7 @@ Output ONLY the JSON array, no other text.
     try {
       console.log(`Attempt #${currentRetry + 1}`);
       const messages = [systemMessage, prompt];
-      const message = await generateTextOpenAI(messages, "ollama", "qwen3:30b");
+      const message = await generateTextOpenAI(messages, "llamacpp", "qwen-3.6-35B-general");
 
       let jsonContent = message.content.trim();
 

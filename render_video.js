@@ -33,7 +33,7 @@ const {
 function createProgressBar(total, taskName) {
   const startTime = Date.now();
   const bar = new cliProgress.SingleBar({
-    format: `${taskName} [{bar}] {percentage}% | {value}/{total} | Elapsed: {elapsed}s | ETA: {eta}s`,
+    format: `${taskName} [{bar}] {percentage}% | {value}/{total} | Elapsed: {elapsed}s | ETA: {eta}s \n`,
     barCompleteChar: '\u2588',
     barIncompleteChar: '\u2591',
     hideCursor: true
