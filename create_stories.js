@@ -1,6 +1,6 @@
 const fs = require("fs");
 const path = require("path");
-const { createFolderIfNotExist } = require("./utils");
+const { createFolderIfNotExist, unloadAllModels } = require("./utils");
 const {
   generateVideoResources,
   generateStoryExtractInfo,
@@ -43,6 +43,7 @@ async function createShortStories(storyTitle) {
   for (let title of storiesToCreate) {
     try {
       console.log(`Creating video: ${title}`);
+      await unloadAllModels();
       await generateVideoResources(title);
       // await generateStoryExtractInfo(story.title);
       // await splitStoryIntoChunks(story.title);

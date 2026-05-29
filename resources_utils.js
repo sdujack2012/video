@@ -9,6 +9,7 @@ const {
   createFolderIfNotExist,
   withExternalComfyuiServers,
   registerExitCallback,
+  unregisterExitCallback
 } = require("./utils");
 
 const util = require("util");
@@ -40,6 +41,9 @@ function createProgressBar(total, taskName) {
   };
 }
 
+const LLAMACPP_HOST = process.env.LLAMACPP_HOST || '192.168.1.28';
+const LLAMACPP_PORT = parseInt(process.env.LLAMACPP_PORT || '8000', 10);
+
 async function generateTextOpenAI(messages, provider, model, unloadModel = true) {
   if (provider === "ollama") {
     return await generateTextOllama(messages, model);
@@ -50,7 +54,7 @@ async function generateTextOpenAI(messages, provider, model, unloadModel = true)
       groq: "https://api.groq.com/openai/v1",
       hf: "https://rhlobdgx0viuipyy.us-east-1.aws.endpoints.huggingface.cloud/v1/",
       lm: "http://localhost:1234/v1/",
-      llamacpp: "http://192.168.1.28:8000/v1/",
+      llamacpp: `http://${LLAMACPP_HOST}:${LLAMACPP_PORT}/v1/`,
     };
     const apiKey = apiKeys[provider];
     const baseURL = baseURLs[provider];
@@ -89,6 +93,7 @@ async function generateTextOpenAI(messages, provider, model, unloadModel = true)
 
     } finally {
       await unloadModelOnExit();
+      unregisterExitCallback(unloadModelOnExit);
     }
   }
 }
@@ -248,11 +253,9 @@ async function batchGenerateVideosComfyUI(imagePromptDetails) {
         // Upload the input image to the remote ComfyUI server
         const imageBuffer = fs.readFileSync(imagePromptDetail.imageFile);
         const imageFileName = path.basename(imagePromptDetail.imageFile) + Date.now() + path.extname(imagePromptDetail.imageFile);
-        await clients[availableClient].client.uploadImage(imageBuffer, imageFileName);
-
+        const res = await clients[availableClient].client.uploadImage(imageBuffer, imageFileName);
         // Reference the uploaded file by basename (ComfyUI stores it in its input/ directory)
         workflow["269"]["inputs"]["image"] = imageFileName;
-
         const outputfiles = await clients[availableClient].client.getOutputFiles(
           workflow,
           "video",
@@ -269,7 +272,7 @@ async function batchGenerateVideosComfyUI(imagePromptDetails) {
           clients[availableClient].free = true;
         });
       };
-      imagesGenerates.push(generateImage());
+      imagesGenerates.push(generateImage().catch(ex => { console.error(`Error generating video for ${imagePromptDetail.videoFile}:`, ex); }));
     }
 
     await Promise.all(imagesGenerates);
@@ -298,6 +301,7 @@ async function batchGenerateImagesComfyUI(imagePromptDetails) {
       const availableClient = clients.findIndex(
         (clientConfig) => clientConfig.free
       );
+      console.log(`Processing image prompt: ${imagePromptDetail.imageFile}`);
       console.log("availableClient", availableClient);
 
       runInAction(() => {
@@ -334,7 +338,7 @@ async function batchGenerateImagesComfyUI(imagePromptDetails) {
           clients[availableClient].free = true;
         });
       };
-      imagesGenerates.push(generateImage());
+      imagesGenerates.push(generateImage().catch(ex => { console.error(`Error generating image for ${imagePromptDetail.imageFile}:`, ex); }));
     }
 
     await Promise.all(imagesGenerates);
@@ -442,7 +446,7 @@ Please write a image prompt to create a cover image for the following story cont
   const messages = [systemMessage, prompt];
 
   messages.push(prompt);
-  const message = await generateTextOpenAI(messages, "llamacpp", "qwen-3.6-35B-general");
+  const message = await generateTextOpenAI(messages, "llamacpp", "qwen-3.6-35B-MTP-general");
   return message.content;
 }
 
@@ -576,7 +580,7 @@ Output ONLY valid JSON following the structure specified.`
       const message = await generateTextOpenAI(
         [systemPrompt, userPrompt],
         "llamacpp",
-        "qwen-3.6-35B-general"
+        "qwen-3.6-35B-MTP-general"
       );
 
       const jsonMatch = message.content.match(/\{[\s\S]*\}/);
@@ -703,7 +707,7 @@ async function generateContinousStoryScenePrompts(
   characters
 ) {
   console.log("Batch Generating scene prompts");
-  const splitLimit = 3;
+  const splitLimit = 5;
   const tempFolder = createFolderIfNotExist("temp", title);
   const cacheFile = path.resolve(
     tempFolder,
@@ -732,10 +736,19 @@ async function generateContinousStoryScenePrompts(
 
 Your goal: Transform story scenes into detailed, filmable image prompts that capture the cinematic essence and emotional atmosphere.
 
+DIVERSITY & VARIETY (CRITICAL):
+- Each scene prompt MUST use a DIFFERENT shot composition, camera angle, lighting scheme, and artistic rendering style than the previous scene
+- Vary storytelling approach: alternate between explicit (showing exactly what happens), implicit (suggesting through metaphor), atmospheric (mood-driven), contemplative (character inner state), symbolic (visual symbols), and subjective (character POV filtered)
+- Never repeat the same shot type (e.g., "wide shot") twice in a row
+- Mix camera perspectives: bird's eye, low-angle, eye-level, Dutch tilt, over-shoulder, POV
+- Alternate lighting dramatically: warm golden hour, cold moonlight, harsh neon, soft diffused, dramatic chiaroscuro, silhouettes
+- Vary artistic style while respecting the ${genre} genre: photorealistic, film noir, dreamy, impressionistic, expressionist, vintage, etc.
+
 CORE PRINCIPLES:
 - Treat each scene as a film frame - consider composition, lighting, depth, and mood
 - Maintain visual continuity across scenes (consistent character appearances, locations, lighting conditions)
 - ${styleGuide}
+- **Each scene should feel visually distinct from the ones before and after it**
 
 PROMPT STRUCTURE (follow precisely):
 [cinematic_style], [main_subject with full appearance], [specific action/pose], [detailed environment/setting], [lighting type and quality], [camera angle/framing], [atmospheric effects]
@@ -752,14 +765,17 @@ CHARACTER STATE CONTINUITY (CRITICAL):
 - Pay attention to: body positions, held objects, clothing additions/removals, character locations within scene
 
 CINEMATIC TECHNIQUES:
-- Specify shot types: wide establishing, medium, close-up, over-shoulder
-- Camera angles: eye-level, low-angle, high-angle, Dutch tilt
-- Lighting: golden hour, dramatic side-lighting, soft diffused, harsh shadows, backlighting
-- Depth: shallow/deep focus, bokeh, foreground elements
-- Atmosphere: fog, mist, dust particles, rain, volumetric lighting
+- Specify shot types: wide establishing, medium, close-up, over-shoulder, Dutch angle, bird's eye, POV, low-angle, high-angle, full-body, cowbody shot
+- Camera angles: eye-level, low-angle, high-angle, Dutch tilt, bird's eye, worm's eye, over-shoulder
+- Lighting: golden hour, dramatic side-lighting, soft diffused, harsh shadows, backlighting, chiaroscuro, neon, candlelight, moonlight, god rays, silhouette
+- Depth: shallow/deep focus, bokeh, foreground elements, split diopter
+- Atmosphere: fog, mist, dust particles, rain, volumetric lighting, smoke, pollen, snow, heat haze
+- Artistic render: photorealistic, vintage film grain, anime cel-shaded, oil painting, watercolor, expressionist, noir monochrome
 
-EXAMPLE QUALITY:
-"Cinematic wide shot, 30-year-old Asian male detective in worn trench coat and fedora, standing in rain-soaked alley examining evidence, dark urban noir setting with neon signs reflecting in puddles, dramatic side-lighting from street lamp creating long shadows, low-angle perspective, heavy rain with visible droplets, film noir style"
+EXAMPLE DIVERSITY:
+Scene 1: "Cinematic wide establishing shot in golden hour warm light, rolling hills with a lone figure silhouetted against the setting sun, dramatic backlighting, low camera angle emphasizing vastness, warm amber color palette with long shadows"
+Scene 2: "Dutch angle intimate close-up, 30-year-old woman with freckled skin and wind-tousled red hair, catching her breath with eyes wide, cool blue moonlight casts across half her face in chiaroscuro, shallow depth of field with bokeh forest background, fireflies drifting through frame"
+Scene 3: "Bird's eye view telephoto compression shot, the woman now a tiny figure running through dark forest, moonlight piercing canopy in god rays, subjective POV feeling of being watched, cool teal and deep purple palette, mist hugging the ground"
 
 Generate prompts that a cinematographer could use to set up an actual shot.`
   };
@@ -777,6 +793,96 @@ Generate prompts that a cinematographer could use to set up an actual shot.`
   const retry = 5;
   const contextSize = 5;
 
+  // Diversity dimension pools for varied prompt generation
+  const compositionTypes = [
+    "wide establishing shot", "medium shot", "close-up shot", "extreme close-up",
+    "over-the-shoulder shot", "two-shot", "full-body shot", "cowboy shot (mid-thigh up)",
+    "bird's eye view", "Dutch angle shot", "POV shot", "low-angle shot",
+    "high-angle shot", "aerial establishing shot", "split diopter shot",
+    "dolly zoom shot", "tracking shot", "macro close-up", "silhouette shot",
+    "reflection shot through mirror/water", "shallow depth of field close-up",
+    "wide angle distorted perspective", "telephoto compressed shot",
+    "interior monologue montage composition"
+  ];
+
+  const lightingStyles = [
+    "golden hour warm backlighting", "dramatic chiaroscuro side-lighting",
+    "soft diffused overhead lighting", "harsh direct top-down shadow lighting",
+    "cool blue moonlight rim lighting", "flickering candlelight with warm shadows",
+    "neon-drenched city-light illumination", "morning haze with soft window light",
+    "twilight purple ambient skylight", "overcast flat diffused lighting",
+    "volumetric god rays piercing through", "dappled light through tree canopy",
+    "single-source noir-style key light", "bi-color practical lamp lighting",
+    "underlit creepy flashlight illumination", "silhouette against bright background",
+    "radiant sunset backlit glow", "fluorescent harsh greenish institutional light",
+    "campfire warm flickering glow", "strobe/flicker fast cut lighting effect"
+  ];
+
+  const artisticRenderStyles = [
+    "cinematic photorealistic", "vintage film grain aesthetic",
+    "anime cel-shaded style", "oil painting impasto texture",
+    "watercolor wash artistic style", "gritty dark comic book ink",
+    "dreamy soft-focus romanticism", "hyper-detailed 8K documentary realism",
+    "expressionist dramatic color palette", "noir black-and-white high contrast",
+    "vibrant pop-art saturated colors", "vaporwave neon retro-wave",
+    "impressionist soft brushstroke quality", "gothic dark romanticism",
+    "minimalist flat design composition", "surrealist dreamlike distorted reality",
+    "hand-drawn sketch artistic style", "1980s VHS retro low-fidelity",
+    "ethereal glowing fantasy aesthetic", "bleached desaturated documentary look"
+  ];
+
+  const storytellingModes = [
+    "explicit: clearly showing exactly what happens in full detail",
+    "implicit: hinting at the action through visual metaphor and suggestion",
+    "atmospheric: emphasizing mood and environment over specific action details",
+    "contemplative: focusing on character inner state shown through subtle gesture",
+    "juxtaposition: contrasting elements within frame to suggest meaning",
+    "symbolic: using visual symbols that represent the underlying narrative",
+    "objective: straightforward documentary-style observation",
+    "subjective: filtered through a character's perspective with bias",
+    "montage: implied passage of time through compositional fragmentation",
+    "sensory: emphasizing texture, temperature, and physical sensation visually"
+  ];
+
+  // Track used diversity elements to ensure variation across chunks
+  let sceneHistory = cache ? (cache.sceneHistory || {
+    usedCompositions: [],
+    usedLightings: [],
+    usedArtisticStyles: [],
+    usedStorytellingModes: [],
+    lastUsedIndices: {
+      composition: -1,
+      lighting: -1,
+      artisticStyle: -1,
+      storytellingMode: -1
+    }
+  }) : {
+    usedCompositions: [],
+    usedLightings: [],
+    usedArtisticStyles: [],
+    usedStorytellingModes: [],
+    lastUsedIndices: {
+      composition: -1,
+      lighting: -1,
+      artisticStyle: -1,
+      storytellingMode: -1
+    }
+  };
+
+  // Helper: pick next diverse item from a pool, avoiding repeats
+  function pickDiverse(pool, usedItems, lastIndex) {
+    // Filter out items used in the last 2 selections
+    const recentCount = Math.min(usedItems.length, 2);
+    const recentItems = usedItems.slice(usedItems.length - recentCount);
+    const available = pool.filter(item => !recentItems.includes(item));
+
+    // If all items have been used recently, reset and allow any
+    const pickFrom = available.length > 0 ? available : pool;
+    const pick = pickFrom[Math.floor(Math.random() * pickFrom.length)];
+    usedItems.push(pick);
+    return pick;
+  }
+
   //const message = await generateText(messages);
   for (; index < sceneDescriptionChunks.length; index++) {
     console.log(
@@ -789,11 +895,29 @@ Generate prompts that a cinematographer could use to set up an actual shot.`
       ? sceneDescriptions.slice(Math.max(0, index * splitLimit - contextSize), index * splitLimit)
       : [];
 
-    // Enhanced prompt with explicit scene-to-prompt mapping
+    // Pick diverse composition, lighting, artistic style, and storytelling mode for each scene in this chunk
+    const diversityPicks = sceneDescriptionChunk.map(() => ({
+      composition: pickDiverse(compositionTypes, sceneHistory.usedCompositions, sceneHistory.lastUsedIndices.composition),
+      lighting: pickDiverse(lightingStyles, sceneHistory.usedLightings, sceneHistory.lastUsedIndices.lighting),
+      artisticStyle: pickDiverse(artisticRenderStyles, sceneHistory.usedArtisticStyles, sceneHistory.lastUsedIndices.artisticStyle),
+      storytellingMode: pickDiverse(storytellingModes, sceneHistory.usedStorytellingModes, sceneHistory.lastUsedIndices.storytellingMode)
+    }));
+
+    // Enhanced prompt with explicit scene-to-prompt mapping and diversity
     const promptText = `Generate ${sceneDescriptionChunk.length} cinematic image prompts. Each prompt MUST correspond EXACTLY to its scene number.
 
+CRITICAL: DIVERSITY REQUIREMENTS
+Each prompt MUST use the EXACT composition, lighting, artistic style, and storytelling mode assigned below. Do NOT deviate from these. They are selected to ensure maximally varied and interesting visual storytelling across consecutive scenes.
+
+ASSIGNED DIVERSITY ELEMENTS (MANDATORY - use these EXACTLY):
+${diversityPicks.map((dp, i) => `Scene ${i + 1}:
+  • Shot composition: "${dp.composition}"
+  • Lighting: "${dp.lighting}"
+  • Artistic style: "${dp.artisticStyle}"
+  • Storytelling mode: "${dp.storytellingMode}"`).join('\n')}
+
 STRUCTURE (mandatory):
-[visual_style], [subject 1 with FULL appearance] [action],  [subject 2 with FULL appearance] [action], [subject 3 with FULL appearance] [action] (repeat if needed), [environment], [lighting], [camera angle], [effects]
+[artistic_style], [shot_composition], [subject 1 with FULL appearance] [action],  [subject 2 with FULL appearance] [action], [subject 3 with FULL appearance] [action] (repeat if needed), [environment] with the assigned lighting, [camera angle/framing consistent with assigned composition], [atmospheric effects]
 
 CHARACTER RULES (CRITICAL):
 ${characters && characters.length > 0 ? characters.map(c => `- ${c.name}: ${c.appearance}`).join('\n') : 'No characters defined'}
@@ -811,13 +935,14 @@ FOR EACH SCENE:
 1. Identify WHO is in this scene (narrator/character names or describe the subject)
 2. What ACTION is happening (check if character continues previous state from earlier scenes)
 3. WHERE it takes place
-4. HOW it's lit and framed
-5. WHAT atmosphere/mood
-6. Ensure all characters mentioned are included with FULL appearance details
-7. MAINTAIN CHARACTER STATES: If a character had a specific position/prop/action in previous scenes, continue that state unless current scene indicates a change
+4. HOW it's lit and framed (MUST match the assigned composition + lighting above)
+5. WHAT atmosphere/mood (MUST match the assigned storytelling mode above)
+6. WHAT artistic rendering style (MUST match the assigned artistic style above)
+7. Ensure all characters mentioned are included with FULL appearance details
+8. MAINTAIN CHARACTER STATES: If a character had a specific position/prop/action in previous scenes, continue that state unless current scene indicates a change
 
 Output EXACTLY ${sceneDescriptionChunk.length} prompts as JSON array: ["prompt1", "prompt2", ...]
-Each prompt = one detailed sentence with all required elements.`;
+Each prompt = one detailed sentence with all required elements. The composition, lighting, style, and storytelling mode MUST match the assignments above.`;
     const prompt = {
       role: "user",
       content: promptText,
@@ -837,7 +962,7 @@ Each prompt = one detailed sentence with all required elements.`;
       try {
         console.log(`Attempt #${currentRetry + 1}`);
         const regex = /\[[\s\S]{10,}\]/gm;
-        message = await generateTextOpenAI(messages, "llamacpp", "qwen-3.6-35B-general");
+        message = await generateTextOpenAI(messages, "llamacpp", "qwen-3.6-35B-MTP-general");
         const matches = message.content.match(regex);
         if (matches && matches.length > 0) {
           const parsed = JSON.parse(matches[0]);
@@ -848,21 +973,46 @@ Each prompt = one detailed sentence with all required elements.`;
             sceneDescriptionChunk.length === parsed.length &&
             parsed.every((item) => item && typeof item === 'string' && item.length > 20)
           ) {
-            // Quality validation: check for character consistency
+            // Quality validation: check for character consistency and diversity
             let hasQualityIssues = false;
             let issueDetails = [];
 
             for (let i = 0; i < parsed.length; i++) {
               const prompt = parsed[i];
               const scene = sceneDescriptionChunk[i];
+              const diversityPick = diversityPicks[i];
 
-              // Check 1: Prompt should mention visual style
-              if (!prompt.match(/\b(cinematic|horror|photorealistic|oil painting|anime|3D render|wide shot|medium shot|close-up)\b/i)) {
+              // Check 1: Prompt should mention a visual style/shot type
+              if (!prompt.match(/\b(cinematic|horror|photorealistic|oil painting|anime|3D render|wide shot|medium shot|close-up|wide establishing|dutch angle|bird's eye|POV|low-angle|high-angle|aerial|full-body|cowboy|split diopter|dolly zoom|tracking|macro|silhouette|telephoto|montage)\b/i)) {
                 hasQualityIssues = true;
                 issueDetails.push(`Scene ${i + 1}: Missing visual style/shot type`);
               }
 
-              // Check 2: If scene mentions character names, prompt should too (or describe them)
+              // Check 2: Prompt should use the assigned composition
+              const compositionKeywords = diversityPick.composition.split(/\s+/).filter(w => w.length > 3);
+              const hasAssignedComposition = compositionKeywords.some(kw => prompt.toLowerCase().includes(kw.toLowerCase()));
+              if (!hasAssignedComposition) {
+                hasQualityIssues = true;
+                issueDetails.push(`Scene ${i + 1}: Missing assigned composition "${diversityPick.composition}"`);
+              }
+
+              // Check 3: Prompt should use the assigned lighting
+              const lightingKeywords = diversityPick.lighting.split(/\s+/).filter(w => w.length > 3);
+              const hasAssignedLighting = lightingKeywords.some(kw => prompt.toLowerCase().includes(kw.toLowerCase()));
+              if (!hasAssignedLighting) {
+                hasQualityIssues = true;
+                issueDetails.push(`Scene ${i + 1}: Missing assigned lighting "${diversityPick.lighting}"`);
+              }
+
+              // Check 4: Prompt should reference the assigned artistic style
+              const styleKeywords = diversityPick.artisticStyle.split(/\s+/).filter(w => w.length > 3);
+              const hasAssignedStyle = styleKeywords.some(kw => prompt.toLowerCase().includes(kw.toLowerCase()));
+              if (!hasAssignedStyle) {
+                hasQualityIssues = true;
+                issueDetails.push(`Scene ${i + 1}: Missing assigned artistic style "${diversityPick.artisticStyle}"`);
+              }
+
+              // Check 5: If scene mentions character names, prompt should too (or describe them)
               if (characters && characters.length > 0) {
                 const mentionedChars = characters.filter(c =>
                   scene.toLowerCase().includes(c.name.toLowerCase().split(' ')[0]) ||
@@ -881,7 +1031,7 @@ Each prompt = one detailed sentence with all required elements.`;
                 }
               }
 
-              // Check 3: Prompt should have sufficient detail (commas indicate detail)
+              // Check 6: Prompt should have sufficient detail (commas indicate detail)
               if (prompt.split(',').length < 3) {
                 hasQualityIssues = true;
                 issueDetails.push(`Scene ${i + 1}: Insufficient detail (less than 3 descriptive elements)`);
@@ -900,6 +1050,7 @@ Each prompt = one detailed sentence with all required elements.`;
                   scenePrompts,
                   index,
                   splitLimit,
+                  sceneHistory,
                 })
               );
               generated = true;
@@ -921,8 +1072,15 @@ Each prompt = one detailed sentence with all required elements.`;
         ${characters && characters.length > 0 ? `CHARACTER REFERENCES:
         ${characters.map(c => `- ${c.name}: ${c.appearance}`).join('\n')}` : ''}
 
+        ASSIGNED DIVERSITY ELEMENTS (MANDATORY - you MUST follow these):
+        ${diversityPicks.map((dp, i) => `Scene ${i + 1}:
+          • Shot composition: "${dp.composition}"
+          • Lighting: "${dp.lighting}"
+          • Artistic style: "${dp.artisticStyle}"
+          • Storytelling mode: "${dp.storytellingMode}"`).join('\n')}
+
         Please regenerate the ${sceneDescriptionChunk.length} prompts with:
-        1. Proper cinematic style and shot type at the start
+        1. The EXACT assigned composition, lighting, artistic style, and storytelling mode for each scene
         2. Character names and full appearance details when they appear in scenes (use CHARACTER REFERENCES above)
         3. At least 3-5 descriptive elements (style, subject, action, environment, lighting, effects)
         4. Ensure each prompt matches its corresponding scene content from SCENES CONTEXT
@@ -957,6 +1115,7 @@ Each prompt = one detailed sentence with all required elements.`;
               scenePrompts,
               index,
               splitLimit,
+              sceneHistory,
             })
           );
         } else {
@@ -981,7 +1140,7 @@ async function generateContinousStorySceneVideoPrompts(
   characters
 ) {
   console.log("Batch Generating video prompts");
-  const splitLimit = 3;
+  const splitLimit = 5;
   const tempFolder = createFolderIfNotExist("temp", title);
   const cacheFile = path.resolve(
     tempFolder,
@@ -1096,7 +1255,7 @@ Each prompt should be one detailed flowing paragraph (NOT JSON objects).
       try {
         console.log(`Attempt #${currentRetry + 1} `);
         const regex = /\[[\s\S]{10,}\]/gm;
-        message = await generateTextOpenAI(messages, "llamacpp", "qwen-3.6-35B-general");
+        message = await generateTextOpenAI(messages, "llamacpp", "qwen-3.6-35B-MTP-general");
         const matches = message.content.match(regex);
         if (matches && matches.length > 0) {
           const parsed = JSON.parse(matches[0]);
@@ -1220,7 +1379,7 @@ Output: Only provide the raw JSON string without any additional messages or form
         const regex = /\[[\s\S]{10,}\]/gm;
         const message = await generateTextOpenAI(
           messages,
-          "llamacpp", "qwen-3.6-35B-general");
+          "llamacpp", "qwen-3.6-35B-MTP-general");
         const matches = message.content.match(regex);
         if (matches && matches.length > 0) {
           const parsed = JSON.parse(matches[0]);
@@ -1330,7 +1489,7 @@ Output ONLY the JSON array, no other text.
     try {
       console.log(`Attempt #${currentRetry + 1}`);
       const messages = [systemMessage, prompt];
-      const message = await generateTextOpenAI(messages, "llamacpp", "qwen-3.6-35B-general");
+      const message = await generateTextOpenAI(messages, "llamacpp", "qwen-3.6-35B-MTP-general");
 
       let jsonContent = message.content.trim();
 

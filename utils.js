@@ -51,36 +51,110 @@ async function executeExternalHelper(command, inputJson, additionalParams) {
   }
 }
 
+// Track registered exit callbacks for later unregistration
+const exitCallbacks = new Map();
+
+const LLAMACPP_HOST = process.env.LLAMACPP_HOST || '192.168.1.28';
+const LLAMACPP_PORT = parseInt(process.env.LLAMACPP_PORT || '8000', 10);
+const LLAMACPP_SERVER = `http://${LLAMACPP_HOST}:${LLAMACPP_PORT}`;
+
+/**
+ * Unload all llama.cpp models, interrupt & clear ComfyUI queues, and unload all ComfyUI models.
+ */
+async function unloadAllModels() {
+  console.log("Unloading all models...");
+
+  // 1. Unload all llama.cpp models
+  try {
+    // Get list of loaded models from the OpenAI-compatible endpoint
+    const modelsRes = await axios.get(`${LLAMACPP_SERVER}/v1/models`);
+    const loadedModels = modelsRes.data?.data?.filter(m => m.status?.value === "loaded") || [];
+
+    for (const model of loadedModels) {
+      try {
+        await axios.post(`${LLAMACPP_SERVER}/models/unload`, { model: model.id });
+        console.log(`llama.cpp model unloaded: ${model.id}`);
+      } catch (ex) {
+        console.log(`Note: Could not unload llama.cpp model ${model.id}:`, ex.message);
+      }
+    }
+
+    if (loadedModels.length === 0) {
+      console.log("No loaded llama.cpp models found");
+    }
+  } catch (ex) {
+    console.log("Note: Could not query llama.cpp models:", ex.message);
+  }
+
+  // 2. Interrupt and clear all jobs on both local ComfyUI instances
+  const localServers = [COMFYUI_PORT_1, COMFYUI_PORT_2].map(port => ({
+    host: COMFYUI_HOST,
+    port,
+  }));
+
+  // 3. Collect external ComfyUI servers from .env
+  const externalServers = [];
+  let index = 1;
+  while (process.env[`EXTERNAL_COMFYUI_HOST_${index}`]) {
+    const host = process.env[`EXTERNAL_COMFYUI_HOST_${index}`];
+    const port = parseInt(process.env[`EXTERNAL_COMFYUI_PORT_${index}`] || '8188', 10);
+    externalServers.push({ host, port });
+    index++;
+  }
+
+  const allServers = [...localServers, ...externalServers];
+
+  for (const { host, port } of allServers) {
+    try {
+      await axios.post(`http://${host}:${port}/interrupt`);
+      console.log(`ComfyUI ${host}:${port} interrupted`);
+    } catch (ex) {
+      console.log(`Note: Could not interrupt ComfyUI ${host}:${port}:`, ex.message);
+    }
+
+    try {
+      await axios.post(`http://${host}:${port}/queue`, { clear: true });
+      console.log(`ComfyUI ${host}:${port} queue cleared`);
+    } catch (ex) {
+      console.log(`Note: Could not clear ComfyUI queue on ${host}:${port}:`, ex.message);
+    }
+
+    try {
+      await axios.post(`http://${host}:${port}/free`);
+      console.log(`Freed models on ${host}:${port}`);
+    } catch (ex) {
+      // Silently ignore errors during forced cleanup
+    }
+  }
+
+  console.log("All models unloaded");
+}
+
 function registerExitCallback(callback) {
-  process.on("exit", () => {
+  const wrappedCallback = () => {
     callback();
     setTimeout(() => {
       process.exit();
     }, 1000);
-  });
+  };
 
-  // catches ctrl+c event
-  process.on("SIGINT", () => {
-    callback();
-    setTimeout(() => {
-      process.exit();
-    }, 1000);
-  });
+  process.on("exit", wrappedCallback);
+  process.on("SIGINT", wrappedCallback);
+  process.on("SIGUSR1", wrappedCallback);
+  process.on("SIGUSR2", wrappedCallback);
 
-  // catches "kill pid" (for example: nodemon restart)
-  process.on("SIGUSR1", () => {
-    callback();
-    setTimeout(() => {
-      process.exit();
-    }, 1000);
-  });
+  exitCallbacks.set(callback, wrappedCallback);
+}
 
-  process.on("SIGUSR2", () => {
-    callback();
-    setTimeout(() => {
-      process.exit();
-    }, 1000);
-  });
+function unregisterExitCallback(callback) {
+  const wrappedCallback = exitCallbacks.get(callback);
+  if (wrappedCallback) {
+    process.off("exit", wrappedCallback);
+    process.off("SIGINT", wrappedCallback);
+    process.off("SIGUSR1", wrappedCallback);
+    process.off("SIGUSR2", wrappedCallback);
+    exitCallbacks.delete(callback);
+  }
 }
 
 // Track server processes
@@ -239,6 +313,13 @@ async function withComfyUIServers(ports, callback) {
 // Wrapper function that connects to external ComfyUI servers (remote machines)
 // Reads server addresses from .env: EXTERNAL_COMFYUI_HOST_1, EXTERNAL_COMFYUI_PORT_1, etc.
 async function withExternalComfyuiServers(callback) {
+  // Unload all models (including llama.cpp) before connecting to external servers
+  try {
+    await unloadAllModels();
+  } catch (ex) {
+    console.log('Note: Could not unload models before connecting to external servers:', ex.message);
+  }
+
   const externalServers = [];
 
   // Collect all external server configs from .env
@@ -282,6 +363,22 @@ async function withExternalComfyuiServers(callback) {
   const freeModelsOnExit = async () => {
     for (const { client } of clients) {
       try {
+        // Interrupt any currently running job
+        await axios.post(`http://${client.serverAddress}/interrupt`);
+        console.log(`Interrupted current job on ${client.serverAddress}`);
+      } catch (ex) {
+        // Silently ignore errors during forced cleanup
+      }
+
+      try {
+        // Clear all pending jobs in the queue
+        await axios.post(`http://${client.serverAddress}/queue`, { clear: true });
+        console.log(`Cleared pending queue on ${client.serverAddress}`);
+      } catch (ex) {
+        // Silently ignore errors during forced cleanup
+      }
+
+      try {
         await axios.post(`http://${client.serverAddress}/free`);
         console.log(`Freed models on ${client.serverAddress}`);
       } catch (ex) {
@@ -295,6 +392,14 @@ async function withExternalComfyuiServers(callback) {
     return await callback(clients);
   } finally {
     await freeModelsOnExit();
+    unregisterExitCallback(freeModelsOnExit);
+    for (const { client } of clients) {
+      try {
+        await client.disconnect();
+      } catch (ex) {
+        // Silently ignore errors during disconnect
+      }
+    }
   }
 }
 
@@ -302,8 +407,10 @@ exports.createFolderIfNotExist = createFolderIfNotExist;
 exports.executeExternalHelper = executeExternalHelper;
 exports.splitArrayIntoChunks = splitArrayIntoChunks;
 exports.registerExitCallback = registerExitCallback;
+exports.unregisterExitCallback = unregisterExitCallback;
 exports.withComfyUIServers = withComfyUIServers;
 exports.withExternalComfyuiServers = withExternalComfyuiServers;
 exports.isServerRunning = isServerRunning;
 exports.startComfyUIServer = startComfyUIServer;
 exports.ensureServerRunning = ensureServerRunning;
+exports.unloadAllModels = unloadAllModels;

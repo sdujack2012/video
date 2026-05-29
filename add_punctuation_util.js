@@ -31,7 +31,7 @@ async function punctuateChunk(chunk) {
     },
   ],
     "llamacpp",
-    "qwen-3.6-35B-general",
+    "qwen-3.6-35B-MTP-general",
   );
 
   return message.content;

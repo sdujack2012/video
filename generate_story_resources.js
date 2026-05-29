@@ -391,7 +391,6 @@ async function generateStoryExtractInfo(title) {
     return;
   }
 
-  console.log("Extracting characters with detailed appearances from story");
   const characters = await extractCharactersWithAppearance(story.content, story.style, story.genre);
   story.characters = characters;
 
